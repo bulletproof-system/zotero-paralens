@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://paralens.local/schema/mapping.v1.json",
+  "title": "ParaLens mapping.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "source", "target", "segments", "provenance"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "source": { "$ref": "#/$defs/document" },
+    "target": { "$ref": "#/$defs/document" },
+    "segments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/segment" }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["backend", "adapterVersion", "createdAt"],
+      "properties": {
+        "backend": { "type": "string", "minLength": 1 },
+        "backendVersion": { "type": "string" },
+        "adapterVersion": { "type": "string", "minLength": 1 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "sourceFormat": { "type": "string" },
+        "backendIds": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "attachmentKey", "pageCount"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+        "attachmentKey": { "type": "string", "minLength": 1 },
+        "pageCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "quad": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number", "minimum": 0, "maximum": 1 }
+      ],
+      "items": false
+    },
+    "pageRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pageIndex", "quads"],
+      "properties": {
+        "pageIndex": { "type": "integer", "minimum": 0 },
+        "quads": { "type": "array", "items": { "$ref": "#/$defs/quad" } },
+        "text": { "type": "string" }
+      }
+    },
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "level", "status", "source", "target"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "level": { "enum": ["paragraph", "sentence"] },
+        "status": { "enum": ["aligned", "skipped", "uncertain", "failed"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "source": { "type": "array", "items": { "$ref": "#/$defs/pageRef" } },
+        "target": { "type": "array", "items": { "$ref": "#/$defs/pageRef" } },
+        "metadata": { "type": "object" }
+      }
+    }
+  }
+}

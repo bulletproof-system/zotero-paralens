@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "pageCount": 1,
+    "attachmentKey": "S"
+  },
+  "target": {
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "pageCount": 1,
+    "attachmentKey": "T"
+  },
+  "segments": [
+    {
+      "id": "p-0000-0000",
+      "level": "paragraph",
+      "status": "aligned",
+      "confidence": 0.8,
+      "source": [
+        {
+          "pageIndex": 0,
+          "quads": [
+            [
+              0.1210084, 0.0949525, 0.5485848, 0.0949525, 0.5485848, 0.1177981,
+              0.1210084, 0.1177981
+            ]
+          ]
+        }
+      ],
+      "target": [
+        {
+          "pageIndex": 0,
+          "quads": [
+            [
+              0.1213378, 0.0971473, 0.4036908, 0.0971473, 0.4036908, 0.1210237,
+              0.1213378, 0.1210237
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "p-0000-0001",
+      "level": "paragraph",
+      "status": "aligned",
+      "confidence": 0.8,
+      "source": [
+        {
+          "pageIndex": 0,
+          "quads": [
+            [
+              0.1210084, 0.1959026, 0.5512436, 0.1959026, 0.5512436, 0.2187483,
+              0.1210084, 0.2187483
+            ]
+          ]
+        }
+      ],
+      "target": [
+        {
+          "pageIndex": 0,
+          "quads": [
+            [
+              0.1213378, 0.1980974, 0.4507496, 0.1980974, 0.4507496, 0.2219738,
+              0.1213378, 0.2219738
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "backend": "babeldoc",
+    "backendVersion": "0.5.20",
+    "adapterVersion": "1",
+    "createdAt": "2026-09-30T00:00:00Z",
+    "sourceFormat": "BabelDOC debug IL + PDF text (monolingual)"
+  }
+}
