@@ -1,0 +1,83 @@
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const path = require("node:path");
+const { buildSync } = require("esbuild");
+
+const outfile = path.resolve(".scaffold", "backend-selection-test.cjs");
+buildSync({
+  entryPoints: [
+    "src/backend/selection.ts",
+    "src/backend/installationStatus.ts",
+  ],
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  outdir: path.dirname(outfile),
+  outExtension: { ".js": ".cjs" },
+});
+const { BACKENDS, resolveBackend, backendInstallArguments } = require(outfile);
+const { isBackendInstalled } = require(
+  path.resolve(".scaffold", "installationStatus.cjs"),
+);
+
+test("only implemented backends appear in the selector", () => {
+  assert.deepEqual(
+    BACKENDS.map(({ id }) => id),
+    ["babeldoc"],
+  );
+  assert.equal(resolveBackend("unsupported").id, "babeldoc");
+});
+
+test("explicit installation uses a fixed uv argument array", () => {
+  assert.deepEqual(
+    backendInstallArguments("babeldoc", "/profile/paralens/backend"),
+    ["sync", "--project", "/profile/paralens/backend", "--python", "3.12"],
+  );
+  assert.throws(
+    () => backendInstallArguments("unsupported", "/profile"),
+    /Unsupported backend/,
+  );
+});
+
+test("install button only hides for a runnable venv with the pinned BabelDOC version", async () => {
+  global.PathUtils = { join: path.join };
+  const project = path.join("profile", "paralens", "backend");
+  const config = path.join(project, ".venv", "pyvenv.cfg");
+  const winPython = path.join(project, ".venv", "Scripts", "python.exe");
+  const unixPython = path.join(project, ".venv", "bin", "python");
+  const calls = [];
+  const execute = async (binary, args) => {
+    calls.push({ binary, args });
+    return true;
+  };
+  const present = new Set([config, winPython]);
+  const exists = async (file) => present.has(file);
+  assert.equal(
+    await isBackendInstalled(undefined, true, exists, execute),
+    false,
+  );
+  assert.equal(
+    await isBackendInstalled(project, false, exists, execute),
+    false,
+  );
+  assert.equal(await isBackendInstalled(project, true, exists, execute), true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].binary, winPython);
+  assert.equal(calls[0].args[0], "-c");
+  assert.match(calls[0].args[1], /babeldoc.*0\.5\.20/);
+  assert(!calls[0].args.join(" ").includes("API_KEY"));
+  present.delete(winPython);
+  assert.equal(await isBackendInstalled(project, true, exists, execute), false);
+  present.add(unixPython);
+  assert.equal(await isBackendInstalled(project, false, exists, execute), true);
+  assert.equal(
+    await isBackendInstalled(project, false, exists, async () => false),
+    false,
+  );
+  assert.equal(
+    await isBackendInstalled(project, false, exists, async () => {
+      throw Error("broken venv");
+    }),
+    false,
+  );
+});
