@@ -1,2 +1,7 @@
-pref("enable", true);
-pref("input", "This is input");
+pref("provider", "openai");
+pref("model", "gpt-4.1-mini");
+pref("customBaseURL", "");
+pref("uvPath", "");
+pref("backend", "babeldoc");
+pref("sourceLanguage", "en");
+pref("targetLanguage", "zh");

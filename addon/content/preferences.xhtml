@@ -5,29 +5,83 @@
   onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
 >
   <label><html:h2 data-l10n-id="pref-title"></html:h2></label>
-  <checkbox
-    id="zotero-prefpane-__addonRef__-enable"
-    preference="enable"
-    data-l10n-id="pref-enable"
-  />
-  <hbox>
+  <html:p data-l10n-id="pref-description"></html:p>
+  <hbox align="center">
+    <html:label for="paralens-uv-path" data-l10n-id="pref-uv-path"></html:label>
+    <html:input id="paralens-uv-path" type="text" flex="1" />
+    <html:button
+      id="paralens-uv-check"
+      type="button"
+      data-l10n-id="pref-uv-check"
+    ></html:button>
+  </hbox>
+  <html:p id="paralens-uv-status" role="status"></html:p>
+  <hbox align="center">
+    <html:label for="paralens-backend" data-l10n-id="pref-backend"></html:label>
+    <html:select id="paralens-backend"></html:select>
+    <html:button
+      id="paralens-backend-install"
+      type="button"
+      data-l10n-id="pref-backend-install"
+      hidden="hidden"
+    ></html:button>
+  </hbox>
+  <html:p id="paralens-backend-status" role="status"></html:p>
+  <html:p data-l10n-id="pref-backend-note"></html:p>
+  <hbox align="center">
     <html:label
-      for="zotero-prefpane-__addonRef__-input"
-      data-l10n-id="pref-input"
+      for="paralens-source-language"
+      data-l10n-id="pref-source-language"
     ></html:label>
-    <html:input
-      type="text"
-      id="zotero-prefpane-__addonRef__-input"
-      preference="input"
-    ></html:input>
+    <html:select id="paralens-source-language">
+      <html:option value="en">English</html:option>
+      <html:option value="zh">简体中文</html:option>
+    </html:select>
   </hbox>
-  <hbox class="virtualized-table-container" flex="1" height="300px">
-    <html:div id="__addonRef__-table-container" />
+  <hbox align="center">
+    <html:label
+      for="paralens-target-language"
+      data-l10n-id="pref-target-language"
+    ></html:label>
+    <html:select id="paralens-target-language">
+      <html:option value="zh">简体中文</html:option>
+      <html:option value="en">English</html:option>
+    </html:select>
   </hbox>
+  <separator class="thin" />
+  <hbox align="center">
+    <html:label
+      for="paralens-provider"
+      data-l10n-id="pref-provider"
+    ></html:label>
+    <html:select id="paralens-provider"></html:select>
+  </hbox>
+  <hbox align="center">
+    <html:label for="paralens-model" data-l10n-id="pref-model"></html:label>
+    <html:input id="paralens-model" type="text" />
+  </hbox>
+  <hbox align="center">
+    <html:label
+      for="paralens-base-url"
+      data-l10n-id="pref-base-url"
+    ></html:label>
+    <html:input id="paralens-base-url" type="text" flex="1" />
+  </hbox>
+  <hbox align="center">
+    <html:label for="paralens-api-key" data-l10n-id="pref-api-key"></html:label>
+    <html:input id="paralens-api-key" type="password" autocomplete="off" />
+    <html:button
+      id="paralens-delete-key"
+      type="button"
+      data-l10n-id="pref-delete-key"
+    ></html:button>
+  </hbox>
+  <html:p id="paralens-key-status" role="status"></html:p>
+  <html:button
+    id="paralens-save"
+    type="button"
+    data-l10n-id="pref-save"
+  ></html:button>
+  <html:p id="paralens-save-status" role="status"></html:p>
+  <html:p data-l10n-id="pref-privacy"></html:p>
 </groupbox>
-<vbox>
-  <html:label
-    data-l10n-id="pref-help"
-    data-l10n-args='{"time": "__buildTime__","name": "__addonName__","version":"__buildVersion__"}'
-  ></html:label>
-</vbox>
