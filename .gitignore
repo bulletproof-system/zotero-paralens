@@ -14,3 +14,15 @@ tsconfig.tsbuildinfo
 .scaffold
 build
 logs
+
+# vscode
+*.code-workspace
+# Local uv worker environment
+backend/.venv/
+
+# Python worker bytecode
+backend/__pycache__/
+backend/tests/__pycache__/
+
+# Python smoke script bytecode
+scripts/__pycache__/
