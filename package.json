@@ -1,7 +1,7 @@
 {
   "name": "zotero-paralens",
   "type": "module",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "ParaLens：Zotero PDF 全文翻译与双语悬停对照（规划阶段）",
   "config": {
     "addonName": "ParaLens",
