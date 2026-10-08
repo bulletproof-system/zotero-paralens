@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from mapping_adapter import make_mapping, _refs
+from mapping_adapter import make_mapping, _refs, MappingUnavailableError
 import worker
 from worker import load_config
 
@@ -44,6 +44,7 @@ class Page:
     def __init__(self, text): self.text = text
     def search_for(self, text, quads): return [Quad()] if text == self.text else []
     def get_textbox(self, rect): return self.text
+    def get_image_info(self, hashes=True): return []
 
 
 class Document:

@@ -90,6 +90,8 @@ export function findHit(
   y: number,
 ): MappingHit | undefined {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return undefined;
+  let figureHit: MappingHit | undefined;
+  let figureArea = Infinity;
   for (const segment of mapping.segments) {
     if (segment.status !== "aligned") continue;
     const refs = refsForSide(segment, side);
@@ -97,12 +99,27 @@ export function findHit(
       if (ref.pageIndex !== pageIndex) continue;
       for (let quadIndex = 0; quadIndex < ref.quads.length; quadIndex++) {
         if (pointInQuad(x, y, ref.quads[quadIndex])) {
-          return { segment, side, pageIndex, quadIndex };
+          const hit = { segment, side, pageIndex, quadIndex };
+          // Text has priority over the containing image, irrespective of order.
+          if (segment.metadata?.kind !== "figure") return hit;
+          // A smaller embedded image must remain hittable inside a composite
+          // figure. Use polygon area, not record order or an axis-aligned box.
+          const quad = ref.quads[quadIndex];
+          let twiceArea = 0;
+          for (let i = 0; i < 8; i += 2) {
+            const next = (i + 2) % 8;
+            twiceArea += quad[i] * quad[next + 1] - quad[next] * quad[i + 1];
+          }
+          const area = Math.abs(twiceArea) / 2;
+          if (area < figureArea) {
+            figureArea = area;
+            figureHit = hit;
+          }
         }
       }
     }
   }
-  return undefined;
+  return figureHit;
 }
 
 export function isValidQuad(quad: unknown): quad is NormalizedQuad {

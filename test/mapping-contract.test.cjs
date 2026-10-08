@@ -1,3 +1,5 @@
+/* global structuredClone, Zotero */
+global.Zotero = { Prefs: { get: () => false, set: () => {} } };
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
@@ -368,5 +370,57 @@ test("Gecko DOM wrappers for the same PDF page must not suppress hover", () => {
     assert.equal(target.page.children[0].removed, undefined);
   } finally {
     pair.detach();
+  }
+});
+
+test("figure regions support bidirectional hover but never intercept finer text hits", () => {
+  const map = sample();
+  const figure = structuredClone(map.segments[0]);
+  figure.id = "figure-0000";
+  figure.metadata = { kind: "figure", identity: "unique-decoded-image" };
+  for (const side of ["source", "target"]) {
+    figure[side][0].quads = [[0.05, 0.05, 0.95, 0.05, 0.95, 0.95, 0.05, 0.95]];
+  }
+  map.segments.unshift(figure);
+  const valid = validateMapping(map);
+  assert.equal(findHit(valid, "source", 0, 0.25, 0.25)?.segment.id, "p-000001");
+  assert.equal(findHit(valid, "target", 2, 0.65, 0.65)?.segment.id, "p-000001");
+  assert.equal(
+    findHit(valid, "source", 0, 0.8, 0.8)?.segment.id,
+    "figure-0000",
+  );
+  assert.equal(
+    findHit(valid, "target", 2, 0.2, 0.2)?.segment.id,
+    "figure-0000",
+  );
+});
+
+test("nested images prefer the smallest actual region and keep the containing figure hittable", () => {
+  const map = sample();
+  const outer = structuredClone(map.segments[0]);
+  outer.id = "figure-outer";
+  outer.metadata = { kind: "figure" };
+  const inner = structuredClone(outer);
+  inner.id = "figure-inner";
+  for (const side of ["source", "target"]) {
+    outer[side][0].quads = [[0.05, 0.05, 0.95, 0.05, 0.95, 0.95, 0.05, 0.95]];
+    inner[side][0].quads = [[0.5, 0.4, 0.6, 0.4, 0.6, 0.5, 0.5, 0.5]];
+  }
+  map.segments.push(outer, inner);
+  for (const order of [map.segments, [...map.segments].reverse()]) {
+    const valid = validateMapping({ ...map, segments: order });
+    for (const [side, page] of [
+      ["source", 0],
+      ["target", 2],
+    ]) {
+      assert.equal(
+        findHit(valid, side, page, 0.55, 0.45)?.segment.id,
+        "figure-inner",
+      );
+      assert.equal(
+        findHit(valid, side, page, 0.8, 0.8)?.segment.id,
+        "figure-outer",
+      );
+    }
   }
 });
