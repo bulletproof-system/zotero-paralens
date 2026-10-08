@@ -1,0 +1,58 @@
+﻿<?xml version="1.0"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>ParaLens · 翻译任务队列</title>
+    <style>
+      body {
+        font: 14px system-ui;
+        padding: 16px;
+      }
+      .task {
+        border-bottom: 1px solid #aaa;
+        padding: 12px 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px 12px;
+        align-items: center;
+      }
+      .paralens-task-description {
+        grid-column: 1 / -1;
+        overflow-wrap: anywhere;
+      }
+      .paralens-task-progress {
+        width: 100%;
+      }
+      .paralens-task-percentage {
+        font-variant-numeric: tabular-nums;
+      }
+      .paralens-task-detail {
+        grid-column: 1 / -1;
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      .paralens-task-detail:empty {
+        display: none;
+      }
+      .paralens-task-detail[data-error="true"] {
+        color: #b3261e;
+      }
+      .paralens-task-actions {
+        grid-column: 1 / -1;
+        display: flex;
+        gap: 8px;
+      }
+      button {
+        padding: 5px 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>翻译任务队列</h2>
+    <p>
+      任务串行执行；中断后不会自动调用 API，点击「重新开始」从头运行。OCR
+      暂不支持。
+    </p>
+    <p id="status" role="status"></p>
+    <div id="tasks"></div>
+  </body>
+</html>

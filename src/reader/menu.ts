@@ -2,6 +2,7 @@ import {
   cancelActiveTranslation,
   isTranslationCancellable,
   openSavedBilingual,
+  openTranslationQueue,
   translateSelection,
 } from "./translationWorkflow";
 
@@ -36,6 +37,11 @@ export function registerTranslationMenu(win: Window): void {
       openSavedBilingual,
     ],
     [
+      "paralens-task-queue",
+      zh ? "ParaLens：翻译任务队列" : "ParaLens: Translation queue",
+      () => openTranslationQueue(win),
+    ],
+    [
       "paralens-cancel-translation",
       zh
         ? "ParaLens：取消正在运行的翻译"
@@ -63,13 +69,17 @@ export function registerTranslationMenu(win: Window): void {
   const updateVisibility = () => {
     const selected = Zotero.getActiveZoteroPane()?.getSelectedItems() || [];
     const show =
-      selected.length === 1 &&
-      (selected[0].isPDFAttachment() || selected[0].isRegularItem());
+      selected.length > 0 &&
+      selected.every((item) => item.isPDFAttachment() || item.isRegularItem());
     for (const item of created)
       item.hidden =
         item.id === "paralens-cancel-translation"
           ? !isTranslationCancellable()
-          : !show;
+          : item.id === "paralens-task-queue"
+            ? false
+            : item.id === "paralens-open-bilingual"
+              ? !show || selected.length !== 1
+              : !show;
   };
   popup.addEventListener("popupshowing", updateVisibility);
   const onUnload = () => unregisterTranslationMenu(win);

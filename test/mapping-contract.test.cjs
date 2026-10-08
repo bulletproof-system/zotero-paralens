@@ -373,6 +373,93 @@ test("Gecko DOM wrappers for the same PDF page must not suppress hover", () => {
   }
 });
 
+test("click locks both highlights across pointer leave; Escape unlocks and cleans listeners", () => {
+  const source = fakeReader("S", 0),
+    target = fakeReader("T", 2);
+  const pair = new NativeReaderPair(
+    source.reader,
+    target.reader,
+    validateMapping(sample()),
+  );
+  assert.equal(pair.attach(), true);
+  source.move(0.25, 0.25);
+  source.listeners.get("click")({
+    target: {
+      closest: (selector) =>
+        selector.startsWith(".page") ? source.page : null,
+    },
+    clientX: 35,
+    clientY: 45,
+  });
+  source.leave();
+  target.leave();
+  assert.equal(source.page.children.filter((node) => !node.removed).length, 1);
+  assert.equal(target.page.children.filter((node) => !node.removed).length, 1);
+  target.listeners.get("keydown")({ key: "Escape" });
+  assert.equal(source.page.children.filter((node) => !node.removed).length, 0);
+  assert.equal(target.page.children.filter((node) => !node.removed).length, 0);
+  pair.detach();
+  assert.equal(source.listeners.size, 0);
+  assert.equal(target.listeners.size, 0);
+});
+
+test("scroll is off by default; enabled sync is bidirectional and programmatic events never echo", () => {
+  const originalGet = Zotero.Prefs.get,
+    originalNow = Date.now;
+  let enabled = false,
+    clock = 1000;
+  Zotero.Prefs.get = () => enabled;
+  Date.now = () => clock;
+  try {
+    const source = fakeReader("S", 0),
+      target = fakeReader("T", 2);
+    const sourceCalls = [],
+      targetCalls = [];
+    const rect = () => ({
+      left: 10,
+      top: 20,
+      width: 100,
+      height: 100,
+      bottom: 120,
+    });
+    source.viewer.currentPageNumber = 1;
+    target.viewer.currentPageNumber = 3;
+    source.viewer.container = { getBoundingClientRect: rect };
+    target.viewer.container = { getBoundingClientRect: rect };
+    source.viewer.scrollPageIntoView = (opts) => sourceCalls.push(opts);
+    target.viewer.scrollPageIntoView = (opts) => targetCalls.push(opts);
+    let pair = new NativeReaderPair(
+      source.reader,
+      target.reader,
+      validateMapping(sample()),
+    );
+    pair.attach();
+    source.listeners.get("scroll")();
+    assert.equal(targetCalls.length, 0);
+    pair.detach();
+    enabled = true;
+    pair = new NativeReaderPair(
+      source.reader,
+      target.reader,
+      validateMapping(sample()),
+    );
+    pair.attach();
+    source.listeners.get("scroll")();
+    assert.equal(targetCalls.length, 1);
+    assert.equal(targetCalls[0].pageNumber, 3);
+    target.listeners.get("scroll")();
+    assert.equal(sourceCalls.length, 0, "programmatic scroll echo suppressed");
+    clock += 500;
+    target.listeners.get("scroll")();
+    assert.equal(sourceCalls.length, 1);
+    assert.equal(sourceCalls[0].pageNumber, 1);
+    pair.detach();
+  } finally {
+    Zotero.Prefs.get = originalGet;
+    Date.now = originalNow;
+  }
+});
+
 test("figure regions support bidirectional hover but never intercept finer text hits", () => {
   const map = sample();
   const figure = structuredClone(map.segments[0]);

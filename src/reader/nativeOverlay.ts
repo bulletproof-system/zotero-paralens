@@ -4,6 +4,8 @@ import {
   NormalizedQuad,
   refsForSide,
 } from "../mapping/types";
+import { getPref, setPref } from "../utils/prefs";
+import { counterpartScrollPoint, ScrollPoint } from "./scrollSync";
 import { findHit, validateMapping } from "../mapping/validation";
 import {
   isPdfViewport,
@@ -24,6 +26,12 @@ export interface NativeReaderLike {
 type PdfViewerApplicationLike = {
   pdfViewer?: {
     currentPageNumber?: number;
+    container?: HTMLElement;
+    scrollPageIntoView?(options: {
+      pageNumber: number;
+      destArray: unknown[];
+      allowNegativeOffset?: boolean;
+    }): void;
     getPageView(
       index: number,
     ): { div?: HTMLElement; viewport?: PdfViewportLike } | undefined;
@@ -80,6 +88,10 @@ export class NativeReaderOverlay {
   // Incoming highlights are not local pointer state: hovering an already
   // highlighted counterpart must still notify the opposite Reader.
   private localId?: string;
+  private lockedId?: string;
+  private ignoreScrollUntil = 0;
+  private onClick?: (id: string | undefined) => void;
+  private onScroll?: (point: ScrollPoint) => void;
   private onHover?: (segmentId: string | undefined) => void;
 
   constructor(
@@ -88,21 +100,46 @@ export class NativeReaderOverlay {
     private readonly side: MappingSideName,
   ) {}
 
-  attach(onHover?: (segmentId: string | undefined) => void): boolean {
+  attach(
+    onHover?: (segmentId: string | undefined) => void,
+    onClick?: (id: string | undefined) => void,
+    onScroll?: (point: ScrollPoint) => void,
+  ): boolean {
     if (this.win) return true;
     const win = resolvePdfWindow(this.reader);
     if (!win) return false;
     this.win = win;
     this.onHover = onHover;
+    this.onClick = onClick;
+    this.onScroll = onScroll;
     const move = (event: Event) => this.handlePointer(event as PointerEvent);
     const leave = (event: Event) => {
       if (event.target === win.document.documentElement)
         this.setActive(undefined);
     };
     const redraw = () => this.redraw();
+    const click = (event: Event) => {
+      if ((event.target as Element)?.closest?.(".paralens-reader-controls"))
+        return;
+      const selection = win.getSelection?.();
+      if (selection && !selection.isCollapsed) return;
+      this.onClick?.(this.hitAt(event as PointerEvent));
+    };
+    const key = (event: Event) => {
+      if ((event as KeyboardEvent).key === "Escape") this.onClick?.(undefined);
+    };
+    const scroll = () => {
+      this.redraw();
+      if (Date.now() >= this.ignoreScrollUntil) {
+        const point = this.scrollPoint();
+        if (point) this.onScroll?.(point);
+      }
+    };
     win.document.addEventListener("pointermove", move, true);
     win.document.addEventListener("pointerleave", leave, true);
-    win.document.addEventListener("scroll", redraw, true);
+    win.document.addEventListener("scroll", scroll, true);
+    win.document.addEventListener("click", click, true);
+    win.document.addEventListener("keydown", key, true);
     win.addEventListener("resize", redraw);
     const hide = () => this.setActive(undefined);
     const unload = () => this.detach();
@@ -113,7 +150,9 @@ export class NativeReaderOverlay {
       () => win.removeEventListener("pagehide", unload),
       () => win.document.removeEventListener("pointermove", move, true),
       () => win.document.removeEventListener("pointerleave", leave, true),
-      () => win.document.removeEventListener("scroll", redraw, true),
+      () => win.document.removeEventListener("scroll", scroll, true),
+      () => win.document.removeEventListener("click", click, true),
+      () => win.document.removeEventListener("keydown", key, true),
       () => win.removeEventListener("resize", redraw),
     );
     // PDF.js replaces page DOM during zoom/rotate. Never retain page elements.
@@ -134,6 +173,9 @@ export class NativeReaderOverlay {
 
   detach(): void {
     this.onHover = undefined;
+    this.onClick = undefined;
+    this.onScroll = undefined;
+    this.lockedId = undefined;
     this.activeId = undefined;
     this.localId = undefined;
     for (const dispose of this.cleanup.splice(0)) {
@@ -165,14 +207,38 @@ export class NativeReaderOverlay {
         pages.length > 0 &&
         !pages.includes(viewer.currentPageNumber)
       ) {
+        this.ignoreScrollUntil = Date.now() + 350;
         viewer.currentPageNumber = pages[0];
       }
+    }
+    const ref =
+      segment?.status === "aligned"
+        ? refsForSide(segment, this.side)[0]
+        : undefined;
+    const viewer = this.win?.PDFViewerApplication?.pdfViewer;
+    const area = viewer?.container?.getBoundingClientRect();
+    const context = ref && this.getPage(ref.pageIndex);
+    if (area && context && ref.quads.length) {
+      const page = context.page.getBoundingClientRect();
+      const [x, y] = normalizedToViewport(
+        context.viewport,
+        ref.quads[0][0],
+        ref.quads[0][1],
+      );
+      const top = page.top + (y * page.height) / context.viewport.height;
+      if (top < area.top || top > area.bottom - 20)
+        this.scrollToPoint({
+          pageIndex: ref.pageIndex,
+          x: ref.quads[0][0],
+          y: ref.quads[0][1],
+        });
     }
     this.redraw();
   }
 
   private setActive(id: string | undefined): void {
     if (this.localId === id && this.activeId === id) return;
+    if (this.lockedId) return;
     this.localId = id;
     this.activeId = id;
     this.redraw();
@@ -192,10 +258,14 @@ export class NativeReaderOverlay {
   }
 
   private handlePointer(event: PointerEvent): void {
+    if (this.lockedId) return;
+    this.setActive(this.hitAt(event));
+  }
+
+  private hitAt(event: PointerEvent): string | undefined {
     const target = event.target;
     if (!target || !(target as Element).closest) {
-      this.setActive(undefined);
-      return;
+      return undefined;
     }
     const page = (target as Element).closest(
       ".page[data-page-number]",
@@ -209,8 +279,7 @@ export class NativeReaderOverlay {
     // Gecko may wrap the same PDF.js DOM node differently across the Reader
     // iframe and an event target. Identity (===) is not stable across wrappers.
     if (!context || (context.page !== page && !context.page.isSameNode(page))) {
-      this.setActive(undefined); // The DOM was replaced or is unsupported.
-      return;
+      return undefined; // The DOM was replaced or is unsupported.
     }
     const rect = page.getBoundingClientRect();
     // DOM may be CSS-scaled while PDF.js viewport is not yet updated.
@@ -219,9 +288,88 @@ export class NativeReaderOverlay {
       ((event.clientX - rect.left) / rect.width) * context.viewport.width,
       ((event.clientY - rect.top) / rect.height) * context.viewport.height,
     );
-    this.setActive(
-      findHit(this.mapping, this.side, pageIndex, x, y)?.segment.id,
+    return findHit(this.mapping, this.side, pageIndex, x, y)?.segment.id;
+  }
+
+  setLocked(id: string | undefined): void {
+    this.lockedId = id;
+    this.localId = undefined;
+    this.showSegment(id);
+  }
+  private scrollPoint(): ScrollPoint | undefined {
+    const viewer = this.win?.PDFViewerApplication?.pdfViewer;
+    const container = viewer?.container;
+    const index = (viewer?.currentPageNumber ?? 1) - 1;
+    const context = this.getPage(index);
+    if (!container || !context) return undefined;
+    const page = context.page.getBoundingClientRect(),
+      area = container.getBoundingClientRect();
+    const [x, y] = viewportToNormalized(
+      context.viewport,
+      Math.max(0, Math.min(1, (area.left - page.left) / page.width)) *
+        context.viewport.width,
+      Math.max(
+        0,
+        Math.min(1, (area.top + area.height * 0.25 - page.top) / page.height),
+      ) * context.viewport.height,
     );
+    return { pageIndex: index, x, y };
+  }
+  scrollToPoint(point: ScrollPoint): void {
+    const viewer = this.win?.PDFViewerApplication?.pdfViewer;
+    const viewport = viewer?.getPageView(point.pageIndex)?.viewport;
+    this.ignoreScrollUntil = Date.now() + 350;
+    if (viewer?.scrollPageIntoView && isPdfViewport(viewport)) {
+      const [x, y] = viewport.convertToPdfPoint(
+        ...normalizedToViewport(viewport, point.x, point.y),
+      );
+      viewer.scrollPageIntoView({
+        pageNumber: point.pageIndex + 1,
+        destArray: [null, { name: "XYZ" }, x, y, null],
+        allowNegativeOffset: true,
+      });
+    } else if (viewer) viewer.currentPageNumber = point.pageIndex + 1;
+  }
+  addControls(
+    sync: () => boolean,
+    toggle: (enabled: boolean) => void,
+    unlock: () => void,
+  ): () => void {
+    const doc = this.win?.document;
+    if (!doc?.body) return () => {};
+    const panel = doc.createElement("div");
+    panel.className = "paralens-reader-controls";
+    Object.assign(panel.style, {
+      position: "fixed",
+      bottom: "12px",
+      right: "24px",
+      zIndex: "10000",
+      background: "#fff",
+      color: "#222",
+      padding: "6px",
+      border: "1px solid #999",
+      borderRadius: "4px",
+      font: "12px sans-serif",
+    });
+    const label = doc.createElement("label"),
+      checkbox = doc.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = sync();
+    checkbox.className = "paralens-sync-scroll";
+    checkbox.addEventListener("change", () => toggle(checkbox.checked));
+    label.append(checkbox, "同步滚动");
+    const button = doc.createElement("button");
+    button.textContent = "解除锁定（Esc）";
+    button.className = "paralens-unlock-highlight";
+    button.addEventListener("click", unlock);
+    panel.append(label, button);
+    doc.body.appendChild(panel);
+    this.cleanup.push(() => panel.remove());
+    return () => {
+      checkbox.checked = sync();
+      button.disabled = !this.lockedId;
+      panel.dataset.locked = this.lockedId ?? "";
+    };
   }
 
   private redraw(): void {
@@ -278,12 +426,18 @@ export class NativeReaderPair {
   readonly target: NativeReaderOverlay;
 
   private readonly attachmentKeysMatch: boolean;
+  private lockedId?: string;
+  private sync = false;
+  private updates: Array<() => void> = [];
+  private readonly mapping: MappingV1;
 
   constructor(
     sourceReader: NativeReaderLike,
     targetReader: NativeReaderLike,
     mapping: MappingV1,
   ) {
+    this.mapping = mapping;
+    this.sync = getPref("syncScroll") === true;
     this.attachmentKeysMatch =
       sourceReader._item?.key === mapping.source.attachmentKey &&
       targetReader._item?.key === mapping.target.attachmentKey;
@@ -293,14 +447,64 @@ export class NativeReaderPair {
 
   attach(): boolean {
     if (!this.attachmentKeysMatch) return false;
-    const source = this.source.attach((id) => this.target.showSegment(id));
-    const target = this.target.attach((id) => this.source.showSegment(id));
-    if (source && target) return true;
+    const click = (id: string | undefined) => {
+      this.lockedId = id === this.lockedId ? undefined : id;
+      this.source.setLocked(this.lockedId);
+      this.target.setLocked(this.lockedId);
+      this.updates.forEach((update) => update());
+    };
+    const source = this.source.attach(
+      (id) => {
+        if (!this.lockedId) this.target.showSegment(id);
+      },
+      click,
+      (point) => {
+        if (this.sync)
+          this.target.scrollToPoint(
+            counterpartScrollPoint(this.mapping, "source", point),
+          );
+      },
+    );
+    const target = this.target.attach(
+      (id) => {
+        if (!this.lockedId) this.source.showSegment(id);
+      },
+      click,
+      (point) => {
+        if (this.sync)
+          this.source.scrollToPoint(
+            counterpartScrollPoint(this.mapping, "target", point),
+          );
+      },
+    );
+    if (source && target) {
+      const toggle = (enabled: boolean) => {
+        this.sync = enabled;
+        setPref("syncScroll", enabled);
+        this.updates.forEach((update) => update());
+      };
+      this.updates = [
+        this.source.addControls(
+          () => this.sync,
+          toggle,
+          () => click(undefined),
+        ),
+        this.target.addControls(
+          () => this.sync,
+          toggle,
+          () => click(undefined),
+        ),
+      ];
+      this.updates.forEach((update) => update());
+      return true;
+    }
     this.detach();
     return false;
   }
 
   detach(): void {
+    this.updates = [];
+    this.lockedId = undefined;
     this.source.detach();
     this.target.detach();
   }

@@ -6,7 +6,10 @@ import {
   unregisterAllTranslationMenus,
   unregisterTranslationMenu,
 } from "./reader/menu";
-import { detachBilingual } from "./reader/translationWorkflow";
+import {
+  detachBilingual,
+  initializeTranslationQueue,
+} from "./reader/translationWorkflow";
 
 async function onStartup(): Promise<void> {
   // Deploy packaged scripts even if the Reader UI is not yet ready.
@@ -51,6 +54,11 @@ async function onStartup(): Promise<void> {
   // so onMainWindowLoad will not fire for it. The menu helper is idempotent.
   for (const win of Zotero.getMainWindows()) {
     registerTranslationMenu(win as Window);
+  }
+  try {
+    await initializeTranslationQueue();
+  } catch {
+    Zotero.debug("[ParaLens] 任务队列读取失败，请检查配置目录");
   }
   // Missing uv must not prevent opening the preferences page or finish startup.
   addon.data.initialized = true;

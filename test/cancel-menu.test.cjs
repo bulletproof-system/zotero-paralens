@@ -25,6 +25,7 @@ async function buildMenu() {
               "export const cancelActiveTranslation = async () => { globalThis.__cancelCalls++; return true; };",
               "export const translateSelection = async () => { globalThis.__translateCalls++; };",
               "export const openSavedBilingual = async () => {};",
+              "export const openTranslationQueue = async () => {};",
             ].join("\n"),
             loader: "js",
           }));
@@ -84,7 +85,7 @@ test("cancel action is visible only while a worker is cancellable", async () => 
   globalThis.__translateCalls = 0;
   try {
     registerTranslationMenu(win);
-    assert.equal(entries.size, 3);
+    assert.equal(entries.size, 4);
     actions.get("popupshowing")();
     const cancel = entries.get("paralens-cancel-translation");
     assert.equal(cancel.hidden, true);

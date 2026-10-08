@@ -38,8 +38,9 @@ async function loadWorkflow() {
            }
            export class BabelDocBackend {
              async translate(req, onProgress) {
-               globalThis.__requests.push(req); onProgress({stage:"translate", completed:1,total:2});
+               globalThis.__requests.push(req); onProgress({stage:"translate", completed:1,total:2,percent:36});
                if (globalThis.__holdJob) return await new Promise(resolve => globalThis.__resolveJob = resolve);
+               globalThis.__result.mapping.provenance.createdAt = new Date(Date.now() + globalThis.__requests.length).toISOString();
                return globalThis.__result;
              }
              async cancel() {
@@ -68,6 +69,7 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     detachBilingual,
     isTranslationCancellable,
     cancelActiveTranslation,
+    translationQueue,
   } = await loadWorkflow();
   assert.equal(
     translatedAttachmentTitle("A PDF", "zh"),
@@ -100,9 +102,12 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     isPDFAttachment: () => true,
     getFilePathAsync: async () => translatedPath,
   };
+  const mappingAttachments = [];
   const opened = [],
     imported = [],
-    labels = [];
+    labels = [],
+    percentages = [],
+    reported = [];
   globalThis.__requests = [];
   globalThis.__result = {
     translatedPdfPath: translatedPath,
@@ -134,6 +139,7 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     profileDir: profile,
     join: path.join,
     parent: path.dirname,
+    isAbsolute: path.isAbsolute,
   };
   global.IOUtils = {
     exists: async (p) =>
@@ -144,6 +150,7 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     makeDirectory: async (p) => fs.mkdir(p, { recursive: true }),
     writeJSON: async (p, value) => fs.writeFile(p, JSON.stringify(value)),
     readJSON: async (p) => JSON.parse(await fs.readFile(p, "utf8")),
+    remove: (p) => fs.rm(p, { force: true }),
     computeHexDigest: async (p) => sha(await fs.readFile(p)),
   };
   global.addon = {
@@ -157,6 +164,7 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     "test stub",
   );
   global.Zotero = {
+    getMainWindow: () => ({ confirm: () => true }),
     Prefs: {
       get: (key) =>
         ({ backend: "babeldoc", sourceLanguage: "en", targetLanguage: "zh" })[
@@ -164,11 +172,43 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
         ],
     },
     Items: {
+      getAsync: async (ids) =>
+        Array.isArray(ids)
+          ? mappingAttachments.filter((item) => ids.includes(item.id))
+          : {
+              getAttachments: () =>
+                mappingAttachments
+                  .filter((item) => !item.deleted)
+                  .map((item) => item.id),
+            },
+      getAll: async () => mappingAttachments,
       getByLibraryAndKeyAsync: async (_libraryID, key) =>
         ({ ABCD1234: source, EFGH5678: target })[key] || false,
     },
     Attachments: {
       importFromFile: async (args) => {
+        if (args.contentType === "application/json") {
+          const file = path.join(
+            profile,
+            "mapping-" + mappingAttachments.length + ".json",
+          );
+          await fs.copyFile(args.file, file);
+          const tags = new Set();
+          const item = {
+            id: 100 + mappingAttachments.length,
+            isAttachment: () => true,
+            deleted: false,
+            hasTag: (tag) => tags.has(tag),
+            addTag: (tag) => tags.add(tag),
+            saveTx: async () => {},
+            getFilePathAsync: async () => file,
+            eraseTx: async () => {
+              item.deleted = true;
+            },
+          };
+          mappingAttachments.push(item);
+          return item;
+        }
         imported.push(args);
         return target;
       },
@@ -190,7 +230,9 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
         setText(text) {
           labels.push(text);
         }
-        setProgress() {}
+        setProgress(value) {
+          percentages.push(value);
+        }
         setError() {}
       };
       changeHeadline() {}
@@ -200,8 +242,25 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     Utilities: { Internal: { exec: async () => true } },
     debug() {},
   };
+  translationQueue().subscribe(() =>
+    reported.push(translationQueue().snapshot().at(-1)?.progress),
+  );
   try {
     await translateSelection({ confirm: () => true } /* window */, [source]);
+    assert.ok(percentages.includes(36));
+    assert.ok(
+      reported.some(
+        (progress) =>
+          progress?.percent === 98 && progress.stage === "导入译文 PDF",
+      ),
+    );
+    assert.ok(
+      reported.some(
+        (progress) =>
+          progress?.percent === 99 && progress.stage === "保存映射附件",
+      ),
+    );
+    assert.equal(translationQueue().snapshot().at(-1).progress.percent, 100);
     assert.equal(imported.length, 1);
     assert.equal(imported[0].parentItemID, 3);
     assert.equal(imported[0].title, "Source（ParaLens 中文译文）");
@@ -276,7 +335,10 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
       beforeRetry,
       "declining an existing translation must not call the paid API again",
     );
-    await fs.writeFile(savedFile, "{broken json");
+    const latestMappingPath = await mappingAttachments
+      .at(-1)
+      .getFilePathAsync();
+    await fs.writeFile(latestMappingPath, "{broken json");
     let damagedPrompt = "";
     await translateSelection(
       {
@@ -290,11 +352,14 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     assert.match(damagedPrompt, /旧的双语映射无法读取/);
     assert.equal(globalThis.__requests.length, beforeRetry);
     await fs.writeFile(savedFile, JSON.stringify(saved));
+    await fs.writeFile(latestMappingPath, JSON.stringify(saved));
 
     const versionedTarget = { ...target, id: 4, key: "NEWV1234" };
     const originalImportForVersion = Zotero.Attachments.importFromFile;
     const originalLookup = Zotero.Items.getByLibraryAndKeyAsync;
     Zotero.Attachments.importFromFile = async (args) => {
+      if (args.contentType === "application/json")
+        return originalImportForVersion(args);
       imported.push(args);
       return versionedTarget;
     };
@@ -325,6 +390,7 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
       Zotero.Attachments.importFromFile = originalImportForVersion;
       Zotero.Items.getByLibraryAndKeyAsync = originalLookup;
       Zotero.Reader._readers.pop();
+      mappingAttachments.at(-1).deleted = true;
     }
     // An imported PDF without a committed mapping is not a usable pair.
     // Both checksum failure and mapping-write failure must roll it back,
@@ -343,24 +409,31 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     const originalDigest = globalThis.__result.mapping.target.sha256;
     try {
       globalThis.__result.mapping.target.sha256 = "0".repeat(64);
-      await assert.rejects(
-        translateSelection({ confirm: () => true }, [source]),
-        /译文附件校验失败/,
-      );
+      await translateSelection({ confirm: () => true }, [source]);
+      assert.equal(translationQueue().snapshot().at(-1).state, "failed");
+      assert(labels.some((text) => text.includes("译文附件校验失败")));
       assert.equal(rollbackAttempts, 1);
       globalThis.__result.mapping.target.sha256 = originalDigest;
       const originalWrite = IOUtils.writeJSON;
       try {
-        IOUtils.writeJSON = async () => {
-          throw new Error("mapping disk full");
+        IOUtils.writeJSON = async (file, data) => {
+          if (file.includes("mappings")) throw new Error("mapping disk full");
+          return originalWrite(file, data);
         };
         failedTarget.eraseTx = async () => {
           rollbackAttempts++;
           throw new Error("erase failed");
         };
-        await assert.rejects(
-          translateSelection({ confirm: () => true }, [source]),
-          /mapping disk full/,
+        const lookupBeforeFailure = Zotero.Items.getByLibraryAndKeyAsync;
+        Zotero.Items.getByLibraryAndKeyAsync = async (lib, key) =>
+          key === failedTarget.key
+            ? failedTarget
+            : lookupBeforeFailure(lib, key);
+        await translateSelection({ confirm: () => true }, [source]);
+        Zotero.Items.getByLibraryAndKeyAsync = lookupBeforeFailure;
+        assert.equal(translationQueue().snapshot().at(-1).state, "failed");
+        assert(
+          labels.some((text) => text.includes("mapping disk full")),
           "cleanup failure must not hide the mapping write failure",
         );
         assert.equal(rollbackAttempts, 2);
@@ -407,11 +480,12 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     );
     globalThis.__result.mapping.segments = [
       {
-        id: "p-0",
+        id: "mapping-unavailable",
         level: "paragraph",
-        status: "uncertain",
+        status: "failed",
         source: [],
         target: [],
+        metadata: { scope: "document", reason: "mapping_unavailable" },
       },
     ];
     const openedBeforeNoAlignment = opened.length;
@@ -422,6 +496,12 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
       "when alignment fails the translated PDF remains readable, but no fake pair opens",
     );
     assert(labels.some((text) => text.includes("未能定位可悬停的段落")));
+    assert.equal(translationQueue().snapshot().at(-1).state, "completed");
+    assert.equal(translationQueue().snapshot().at(-1).progress.percent, 100);
+    assert.match(
+      translationQueue().snapshot().at(-1).progress.message,
+      /没有可信段落映射/,
+    );
     await assert.rejects(openSavedBilingual([source]), /未能定位可悬停的段落/);
     await assert.rejects(
       selectedSourceAttachment([source, target]),
@@ -429,6 +509,8 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     );
   } finally {
     detachBilingual();
+    await translationQueue().stop();
+    await translationQueue().waitForIdle();
     await fs.rm(profile, { recursive: true, force: true });
   }
 });
