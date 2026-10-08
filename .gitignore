@@ -26,3 +26,16 @@ backend/tests/__pycache__/
 
 # Python smoke script bytecode
 scripts/__pycache__/
+
+# Local secrets: keep only explicitly shareable environment templates
+.env.*
+!.env.example
+!.env.template
+
+# Zotero profile credentials/databases and private job artifacts
+logins.json
+logins-backup.json
+key4.db*
+cert9.db*
+zotero.sqlite*
+paralens-jobs/
