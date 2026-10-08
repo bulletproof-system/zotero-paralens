@@ -1,7 +1,11 @@
 /** Run the real Zotero UI smoke test only in a fresh, disposable copy.
  * No saved API key is read, no existing test profile is reset, and the
  * scaffold's global Zotero kill command is replaced with a no-op. */
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
+import process from "node:process";
+import console from "node:console";
+import { setTimeout, clearTimeout } from "node:timers";
+import { prepareMockUV } from "./mock-uv-executable.mjs";
 import {
   copyFileSync,
   cpSync,
@@ -15,23 +19,58 @@ import {
 } from "node:fs";
 import { randomUUID, createHash } from "node:crypto";
 import { dirname, join, resolve, sep } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspace = join(root, ".scaffold");
 const prepareOnly = process.argv.includes("--prepare-only");
-const realAPI = process.argv.includes("--real-api");
+const realComplex = process.argv.includes("--real-complex");
+const realAPI = realComplex || process.argv.includes("--real-api");
+const complexSource = process.env.PARALENS_COMPLEX_SOURCE;
+if (
+  realComplex &&
+  (!complexSource ||
+    !existsSync(complexSource) ||
+    !complexSource.toLowerCase().endsWith(".pdf"))
+)
+  throw new Error(
+    "Real complex translation requires an explicit existing PDF source",
+  );
 const twoPageReal = process.argv.includes("--two-pages");
 if (twoPageReal && !realAPI) throw new Error("--two-pages requires --real-api");
+const complexReplay = process.argv.includes("--replay-complex");
 const replayReal =
+  complexReplay ||
   process.argv.includes("--replay-real") ||
   process.argv.includes("--replay-artifact");
 if (realAPI && replayReal) throw new Error("Select only one test mode");
-const replayPdf = process.env.PARALENS_REPLAY_PDF;
-const replayMapping = process.env.PARALENS_REPLAY_MAPPING;
-const replaySource = process.env.PARALENS_REPLAY_SOURCE;
+const replayDirectory = process.env.PARALENS_REPLAY_DIRECTORY;
+if (
+  complexReplay &&
+  (!replayDirectory ||
+    !existsSync(join(replayDirectory, "result.json")) ||
+    !realpathSync(replayDirectory)
+      .toLowerCase()
+      .startsWith(realpathSync(tmpdir()).toLowerCase() + sep) ||
+    !/^paralens-artifact-replay-/.test(replayDirectory.split(/[\\/]/).at(-1)))
+)
+  throw new Error(
+    "Complex replay requires a fresh OS-temporary artifact replay directory",
+  );
+const replayPdf = complexReplay
+  ? join(replayDirectory, "translated.pdf")
+  : process.env.PARALENS_REPLAY_PDF;
+const replayMapping = complexReplay
+  ? join(replayDirectory, "mapping.v1.json")
+  : process.env.PARALENS_REPLAY_MAPPING;
+const replaySource = complexReplay
+  ? JSON.parse(readFileSync(join(replayDirectory, "replay-input.json"), "utf8"))
+      .sourcePath
+  : process.env.PARALENS_REPLAY_SOURCE;
 if (
   replayReal &&
+  !complexReplay &&
   replaySource &&
   (!existsSync(replaySource) ||
     !realpathSync(replaySource)
@@ -48,6 +87,19 @@ if (
 )
   throw new Error(
     "Set PARALENS_REPLAY_PDF and PARALENS_REPLAY_MAPPING to previous real translation artifacts",
+  );
+// The production tsconfig intentionally excludes tests. Check the opt-in
+// billable test before reading/copying credentials or starting any API work.
+if (realAPI)
+  execFileSync(
+    process.execPath,
+    [
+      join(root, "node_modules", "typescript", "bin", "tsc"),
+      "--noEmit",
+      "--project",
+      join(root, "test", "tsconfig.gui-real.json"),
+    ],
+    { cwd: root, stdio: "inherit", windowsHide: true },
   );
 const credentialProfile = process.env.PARALENS_REAL_API_SOURCE_PROFILE;
 if (
@@ -72,8 +124,12 @@ if (!existsSync(join(root, "node_modules", "zotero-plugin-scaffold")))
   throw new Error("Run npm install in the repository first");
 
 mkdirSync(workspace, { recursive: true });
-const isolated = join(workspace, `gui-smoke-${randomUUID().slice(0, 8)}`);
-const workspaceReal = realpathSync(workspace);
+const testParent = complexReplay || realComplex ? tmpdir() : workspace;
+const isolated = join(
+  testParent,
+  `paralens-gui-smoke-${randomUUID().slice(0, 8)}`,
+);
+const workspaceReal = realpathSync(testParent);
 if (
   !resolve(isolated)
     .toLowerCase()
@@ -100,7 +156,11 @@ if (realAPI) {
 if (replayReal) {
   mkdirSync(join(isolated, "replay-test"));
   copyFileSync(
-    join(root, "test", "gui-replay-real.test.ts"),
+    join(
+      root,
+      "test",
+      complexReplay ? "gui-complex-replay.test.ts" : "gui-replay-real.test.ts",
+    ),
     join(isolated, "replay-test", "gui-replay-real.test.ts"),
   );
 }
@@ -127,13 +187,15 @@ if (replayReal) {
     throw new Error(
       "Replay mapping does not match the synthetic source and translation",
     );
-  if (replaySource)
+  if (replaySource && !complexReplay)
     copyFileSync(source, join(isolated, "fixtures", "gui-smoke-short-en.pdf"));
-  copyFileSync(replayPdf, join(isolated, "fixtures", "real-translation.pdf"));
-  copyFileSync(
-    replayMapping,
-    join(isolated, "fixtures", "real-translation.mapping.json"),
-  );
+  if (!complexReplay) {
+    copyFileSync(replayPdf, join(isolated, "fixtures", "real-translation.pdf"));
+    copyFileSync(
+      replayMapping,
+      join(isolated, "fixtures", "real-translation.mapping.json"),
+    );
+  }
 }
 for (const name of [
   "package.json",
@@ -184,7 +246,7 @@ const isolatedConfig = config
       },
     },
     entries: ${JSON.stringify(realAPI ? "real-test" : replayReal ? "replay-test" : "test")},
-    mocha: { timeout: ${realAPI ? 360000 : 180000} },`,
+    mocha: { timeout: ${realComplex ? 3600000 : realAPI ? 360000 : 180000} },`,
   );
 writeFileSync(join(isolated, "zotero-plugin.config.ts"), isolatedConfig);
 console.log(`Isolated GUI test: ${isolated}`);
@@ -222,6 +284,29 @@ function startMockServer() {
   });
 }
 
+const mockUV =
+  realAPI || replayReal ? undefined : await prepareMockUV(isolated);
+function removeCopiedCredentials() {
+  // Remove only the credential copies in this verified disposable profile.
+  const profile = join(isolated, ".scaffold", "test", "profile");
+  if (
+    !resolve(profile)
+      .toLowerCase()
+      .startsWith(realpathSync(isolated).toLowerCase() + sep)
+  )
+    throw new Error("Refusing to clean outside the workspace");
+  for (const name of [
+    "logins.json",
+    "logins-backup.json",
+    "key4.db",
+    "key4.db-shm",
+    "key4.db-wal",
+  ]) {
+    const file = join(profile, name);
+    if (existsSync(file)) unlinkSync(file);
+  }
+}
+
 const mock = realAPI || replayReal ? undefined : await startMockServer();
 try {
   const child = spawn(
@@ -242,22 +327,31 @@ try {
         ...process.env,
         PARALENS_REAL_API: realAPI ? "1" : "0",
         PARALENS_REAL_API_TWO_PAGES: twoPageReal ? "1" : "0",
+        PARALENS_REAL_API_COMPLEX: realComplex ? "1" : "0",
+        PARALENS_TEST_RETAIN_FAILED_IL: realComplex ? "1" : "0",
         PARALENS_REPLAY_REAL: replayReal ? "1" : "0",
+        PARALENS_REPLAY_COMPLEX: complexReplay ? "1" : "0",
         PARALENS_REPLAY_TWO_COLUMNS:
           replayReal && process.argv.includes("--two-columns") ? "1" : "0",
         PARALENS_REPLAY_PDF_PATH: replayReal
-          ? join(isolated, "fixtures", "real-translation.pdf")
+          ? complexReplay
+            ? replayPdf
+            : join(isolated, "fixtures", "real-translation.pdf")
           : "",
         PARALENS_REPLAY_MAPPING_PATH: replayReal
-          ? join(isolated, "fixtures", "real-translation.mapping.json")
+          ? complexReplay
+            ? replayMapping
+            : join(isolated, "fixtures", "real-translation.mapping.json")
           : "",
         PARALENS_REAL_API_SOURCE_PROFILE: realAPI ? credentialProfile : "",
         PARALENS_TEST_VENV: realpathSync(venv),
-        PARALENS_TEST_SOURCE_PDF: join(
-          isolated,
-          "fixtures",
-          "gui-smoke-short-en.pdf",
-        ),
+        PARALENS_TEST_INSTALL_UV: mockUV?.executable || "",
+        PARALENS_TEST_INSTALL_ARGS: mockUV?.record || "",
+        PARALENS_TEST_SOURCE_PDF: realComplex
+          ? complexSource
+          : complexReplay
+            ? replaySource
+            : join(isolated, "fixtures", "gui-smoke-short-en.pdf"),
         ...(realAPI
           ? {
               PARALENS_REAL_API: "1",
@@ -300,26 +394,7 @@ try {
   process.exitCode = exitCode;
 } finally {
   mock?.server.kill(); // Only this script's localhost server, never Zotero by process name.
-  if (realAPI) {
-    // Remove only the credential copies in this verified disposable profile.
-    const profile = join(isolated, ".scaffold", "test", "profile");
-    if (
-      !resolve(profile)
-        .toLowerCase()
-        .startsWith(realpathSync(workspace).toLowerCase() + sep)
-    )
-      throw new Error("Refusing to clean outside the workspace");
-    for (const name of [
-      "logins.json",
-      "logins-backup.json",
-      "key4.db",
-      "key4.db-shm",
-      "key4.db-wal",
-    ]) {
-      const file = join(profile, name);
-      if (existsSync(file)) unlinkSync(file);
-    }
-  }
+  if (realAPI) removeCopiedCredentials();
   console.log(
     `Disposable profile retained for inspection: ${join(isolated, ".scaffold", "test", "profile")}`,
   );

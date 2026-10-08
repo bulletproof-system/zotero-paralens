@@ -1,6 +1,8 @@
+import { executeHidden } from "../src/backend/process";
 import { inspectUV } from "../src/backend/uvRuntime";
 import { isBackendInstalled } from "../src/backend/installationStatus";
 import { assert } from "chai";
+import { getPref, setPref } from "../src/utils/prefs";
 import { config } from "../package.json";
 
 describe("ParaLens uv startup", function () {
@@ -40,13 +42,14 @@ describe("ParaLens uv startup", function () {
       );
     }
   });
+
   it("recognizes an installed Windows user uv with a native path", async function () {
     if (Services.appinfo.OS !== "WINNT") return;
     const home = Services.env.get("USERPROFILE");
     if (!home) return;
     const exe = PathUtils.join(home, ".local", "bin", "uv.exe");
     if (!(await IOUtils.exists(exe))) return;
-    const executed = await Zotero.Utilities.Internal.exec(exe, ["--version"]);
+    const executed = await executeHidden(exe, ["--version"]);
     assert.equal(
       executed,
       true,
@@ -59,6 +62,29 @@ describe("ParaLens uv startup", function () {
     );
     assert.isTrue(status.path?.toLowerCase().endsWith("uv.exe"));
   });
+
+  it("starts console executables and their child without a visible Windows console", async function () {
+    const mockUV = Services.env.get("PARALENS_TEST_INSTALL_UV");
+    if (Services.appinfo.OS !== "WINNT" || !mockUV) this.skip();
+    const record = PathUtils.join(
+      PathUtils.parent(mockUV),
+      "hidden-process.txt",
+    );
+    assert.isFalse(await IOUtils.exists(record));
+    assert.isTrue(await executeHidden(mockUV, ["--hidden-probe", record]));
+    assert.deepEqual((await IOUtils.readUTF8(record)).trim().split(/\r?\n/), [
+      "parent:false",
+      "child:false",
+    ]);
+    let rejected = false;
+    try {
+      await executeHidden(mockUV, ["--exit-error"]);
+    } catch {
+      rejected = true;
+    }
+    assert.isTrue(rejected, "Nonzero native exits must not look successful");
+  });
+
   it("renders the uv and API provider settings page", async function () {
     const pane = Zotero.PreferencePanes.pluginPanes.find(
       (p) => p.pluginID === config.addonID,
@@ -80,6 +106,19 @@ describe("ParaLens uv startup", function () {
           const install = win!.document.getElementById(
             "paralens-backend-install",
           ) as HTMLButtonElement;
+          const concurrency = win!.document.getElementById(
+            "paralens-concurrency",
+          ) as HTMLInputElement;
+          const qps = win!.document.getElementById(
+            "paralens-qps",
+          ) as HTMLInputElement;
+          assert.equal(
+            concurrency.value,
+            String(getPref("translationConcurrency")),
+          );
+          assert.equal(qps.value, String(getPref("translationQps")));
+          assert.equal(concurrency.max, "16");
+          assert.equal(qps.max, "10");
           assert.equal(backend.value, "babeldoc");
           assert.deepEqual(
             Array.from(backend.options, (option) => option.value),
@@ -94,8 +133,7 @@ describe("ParaLens uv startup", function () {
             project,
             Services.appinfo.OS === "WINNT",
             (file) => IOUtils.exists(file),
-            async (file, args) =>
-              (await Zotero.Utilities.Internal.exec(file, args)) === true,
+            async (file, args) => (await executeHidden(file, args)) === true,
           );
           const backendStatus = win!.document.getElementById(
             "paralens-backend-status",
@@ -123,6 +161,55 @@ describe("ParaLens uv startup", function () {
       win?.close();
     }
   });
+
+  it("rejects invalid performance settings and persists independent concurrency and QPS", async function () {
+    const old = [getPref("translationConcurrency"), getPref("translationQps")];
+    const pane = Zotero.PreferencePanes.pluginPanes.find(
+      (p) => p.pluginID === config.addonID,
+    );
+    const win = Zotero.Utilities.Internal.openPreferences(pane!.id!)!;
+    try {
+      let concurrency: HTMLInputElement | null = null;
+      for (let i = 0; i < 40; i++) {
+        concurrency = win.document.getElementById(
+          "paralens-concurrency",
+        ) as HTMLInputElement | null;
+        if (concurrency?.value) break;
+        await Zotero.Promise.delay(100);
+      }
+      assert.isNotNull(concurrency);
+      const qps = win.document.getElementById(
+        "paralens-qps",
+      ) as HTMLInputElement;
+      const save = win.document.getElementById(
+        "paralens-save",
+      ) as HTMLButtonElement;
+      const status = win.document.getElementById("paralens-save-status")!;
+      concurrency!.value = "17";
+      save.click();
+      for (let i = 0; i < 30 && !/整数/.test(status.textContent || ""); i++)
+        await Zotero.Promise.delay(100);
+      assert.match(status.textContent || "", /整数/);
+      assert.equal(getPref("translationConcurrency"), old[0]);
+      concurrency!.value = "6";
+      qps.value = "3";
+      save.click();
+      for (
+        let i = 0;
+        i < 30 && !/Settings saved|设置已保存/.test(status.textContent || "");
+        i++
+      )
+        await Zotero.Promise.delay(100);
+      assert.match(status.textContent || "", /Settings saved|设置已保存/);
+      assert.equal(getPref("translationConcurrency"), 6);
+      assert.equal(getPref("translationQps"), 3);
+    } finally {
+      win.close();
+      setPref("translationConcurrency", old[0]);
+      setPref("translationQps", old[1]);
+    }
+  });
+
   it("offers installation when the selected backend is not installed", async function () {
     const instance = Zotero[config.addonInstance] as {
       data: { backendProjectDir?: string };
@@ -176,32 +263,16 @@ describe("ParaLens uv startup", function () {
         installedDir,
         Services.appinfo.OS === "WINNT",
         (file) => IOUtils.exists(file),
-        async (file, args) =>
-          (await Zotero.Utilities.Internal.exec(file, args)) === true,
+        async (file, args) => (await executeHidden(file, args)) === true,
       ),
       "This test must use a prepared isolated venv",
     );
     const oldUV = instance.data.uv;
-    const internal = Zotero.Utilities.Internal;
-    const originalExec = internal.exec;
-    const syncArgs: string[][] = [];
-    // Never actually run uv sync or download packages during a GUI test.
-    const intercept = (async (...args: Parameters<typeof originalExec>) => {
-      const [, argv] = args;
-      if (Array.isArray(argv) && argv[0] === "sync") {
-        syncArgs.push(argv);
-        return true;
-      }
-      return originalExec.apply(internal, args);
-    }) as typeof originalExec;
+    const mockUV = Services.env.get("PARALENS_TEST_INSTALL_UV");
+    const record = Services.env.get("PARALENS_TEST_INSTALL_ARGS");
+    if (!mockUV || !record) this.skip();
     let win: Window | undefined;
     try {
-      internal.exec = intercept;
-      assert.strictEqual(
-        internal.exec,
-        intercept,
-        "uv sync must be intercepted before clicking",
-      );
       instance.data.backendProjectDir = PathUtils.join(
         PathUtils.profileDir,
         "paralens",
@@ -224,20 +295,26 @@ describe("ParaLens uv startup", function () {
       assert.isNotNull(button());
       assert.isFalse(button()!.hidden);
       assert.isFalse(button()!.disabled);
-      assert.equal(
-        syncArgs.length,
-        0,
+      assert.isFalse(
+        await IOUtils.exists(record),
         "Opening settings must not install dependencies",
       );
+      (
+        win!.document.getElementById("paralens-uv-path") as HTMLInputElement
+      ).value = mockUV;
       button()!.click();
-      for (let i = 0; i < 80 && (!button()!.hidden || !syncArgs.length); i++)
+      for (
+        let i = 0;
+        i < 80 && (!button()!.hidden || !(await IOUtils.exists(record)));
+        i++
+      )
         await Zotero.Promise.delay(100);
-      assert.equal(
-        syncArgs.length,
-        1,
+      assert.isTrue(
+        await IOUtils.exists(record),
         "Only an explicit click should run uv sync",
       );
-      assert.deepEqual(syncArgs[0], [
+      const syncArgs = (await IOUtils.readUTF8(record)).trim().split(/\r?\n/);
+      assert.deepEqual(syncArgs, [
         "sync",
         "--project",
         installedDir,
@@ -256,7 +333,6 @@ describe("ParaLens uv startup", function () {
       assert.equal(instance.data.backendProjectDir, installedDir);
     } finally {
       win?.close();
-      internal.exec = originalExec;
       instance.data.backendProjectDir = installedDir;
       instance.data.uv = oldUV;
     }

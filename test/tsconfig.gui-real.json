@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "include": ["../src", "../typings", "./gui-real-translation.test.ts"],
+  "exclude": ["../src/modules/examples.ts"],
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "types": ["zotero-types/entries/sandbox", "mocha"]
+  }
+}
