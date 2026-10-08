@@ -77,6 +77,23 @@
     ></html:button>
   </hbox>
   <html:p id="paralens-key-status" role="status"></html:p>
+  <hbox align="center">
+    <html:label
+      for="paralens-concurrency"
+      data-l10n-id="pref-concurrency"
+    ></html:label>
+    <html:input
+      id="paralens-concurrency"
+      type="number"
+      min="1"
+      max="16"
+      step="1"
+    />
+    <html:label for="paralens-qps" data-l10n-id="pref-qps"></html:label>
+    <html:input id="paralens-qps" type="number" min="1" max="10" step="1" />
+  </hbox>
+  <html:p data-l10n-id="pref-performance-note"></html:p>
+
   <html:button
     id="paralens-save"
     type="button"

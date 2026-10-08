@@ -5,3 +5,8 @@ pref("uvPath", "");
 pref("backend", "babeldoc");
 pref("sourceLanguage", "en");
 pref("targetLanguage", "zh");
+
+pref("syncScroll", false);
+
+pref("translationConcurrency", 4);
+pref("translationQps", 2);

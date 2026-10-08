@@ -14,3 +14,7 @@ pref-api-key = API key (leave blank to keep existing)
 pref-delete-key = Delete saved key
 pref-save = Save settings
 pref-privacy = API keys are stored in Zotero's credential manager, not preferences. Saving settings never makes a paid API request.
+
+pref-concurrency = Translation concurrency
+pref-qps = Maximum request starts per second
+pref-performance-note = Defaults: concurrency 4, 2 requests/second. Applies to newly queued jobs; PDFs still run one at a time. Lower these if rate limited. Concurrent requests may be billed simultaneously; cancellation cannot recall sent requests.

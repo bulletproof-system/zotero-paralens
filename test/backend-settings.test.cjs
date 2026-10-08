@@ -5,7 +5,11 @@ const { buildSync } = require("esbuild");
 
 const outdir = path.resolve(".scaffold", "environment-tests");
 buildSync({
-  entryPoints: ["src/backend/uv.ts", "src/backend/providers.ts"],
+  entryPoints: [
+    "src/backend/uv.ts",
+    "src/backend/providers.ts",
+    "src/backend/performance.ts",
+  ],
   bundle: true,
   platform: "node",
   format: "cjs",
@@ -124,4 +128,19 @@ test("presets reduce configuration but reject unencrypted remote endpoints", () 
     validateBaseURL("http://localhost:4000/v1"),
     "http://localhost:4000/v1",
   );
+});
+
+const { translationPerformance } = require(
+  path.join(outdir, "performance.cjs"),
+);
+test("translation concurrency and QPS are independent, bounded integers", () => {
+  assert.deepEqual(translationPerformance(undefined, undefined), {
+    concurrency: 4,
+    qps: 2,
+  });
+  assert.deepEqual(translationPerformance(16, 1), { concurrency: 16, qps: 1 });
+  for (const value of [0, -1, 1.5, NaN, Infinity, true, "4", 17]) {
+    assert.throws(() => translationPerformance(value, 2));
+  }
+  assert.throws(() => translationPerformance(4, 11));
 });

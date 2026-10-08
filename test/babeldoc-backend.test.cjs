@@ -59,8 +59,20 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
           assert(!args.join(" ").includes("TEST_SECRET"));
           const config = JSON.parse(await fs.readFile(args.at(-1), "utf8"));
           assert.equal(config.apiKey, "TEST_SECRET");
+          assert.equal(config.concurrency, 4);
+          assert.equal(config.qps, 2);
           await fs.rm(args.at(-1)); // worker consumes the one-time config
           const job = config.jobDirectory;
+          await fs.writeFile(
+            path.join(job, "progress.json"),
+            JSON.stringify({
+              stage: "翻译段落",
+              completed: 1,
+              total: 1,
+              percent: 36,
+            }),
+          );
+          await new Promise((resolve) => setTimeout(resolve, 350));
           const pdf = Buffer.from("%PDF-1.7\ntranslated");
           await fs.writeFile(path.join(job, "translated.pdf"), pdf);
           await fs.writeFile(
@@ -124,12 +136,21 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
       path: path.join(profile, "uv.exe"),
       message: "ok",
     }));
-    const result = await backend.translate({
-      sourcePath: source,
-      jobDirectory,
-      sourceLanguage: "en",
-      targetLanguage: "zh",
-    });
+    const reports = [];
+    const result = await backend.translate(
+      {
+        sourcePath: source,
+        jobDirectory,
+        sourceLanguage: "en",
+        targetLanguage: "zh",
+      },
+      (progress) => reports.push(progress),
+    );
+    assert.ok(
+      reports.some(
+        (progress) => progress.percent === 36 && progress.stage === "翻译段落",
+      ),
+    );
     assert.equal(result.mapping.provenance.backend, "babeldoc");
     assert.equal(result.mapping.source.attachmentKey, undefined);
     assert.equal(
@@ -197,6 +218,66 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
         }),
         (error) => error.name === "TranslationCancelledError",
       );
+      for (const [diagnostic, pattern] of [
+        [
+          {
+            schemaVersion: 1,
+            stage: "translation",
+            code: "api_auth",
+            message: "TEST_SECRET PRIVATE_TEXT",
+          },
+          /API 鉴权失败/,
+        ],
+        [
+          {
+            schemaVersion: 1,
+            stage: "mapping",
+            code: "memory_exhausted",
+            message: "TEST_SECRET PRIVATE_TEXT",
+          },
+          /内存不足/,
+        ],
+        [
+          {
+            schemaVersion: 1,
+            stage: "mapping",
+            code: "unknown",
+            message: "TEST_SECRET PRIVATE_TEXT",
+          },
+          /BabelDOC 执行失败/,
+        ],
+      ]) {
+        const failedJob = await createBabelDocJobDirectory();
+        global.Zotero.Utilities.Internal.exec = async () => {
+          await fs.writeFile(
+            path.join(failedJob, "error.json"),
+            JSON.stringify(diagnostic),
+          );
+          return false;
+        };
+        const failed = new BabelDocBackend(project, () => ({
+          available: true,
+          path: path.join(profile, "uv.exe"),
+          message: "ok",
+        }));
+        await assert.rejects(
+          failed.translate({
+            sourcePath: source,
+            jobDirectory: failedJob,
+            sourceLanguage: "en",
+            targetLanguage: "zh",
+          }),
+          (error) => {
+            assert.match(error.message, pattern);
+            assert.ok(!error.message.includes("TEST_SECRET"));
+            return true;
+          },
+        );
+        assert.equal(
+          await global.IOUtils.exists(path.join(failedJob, "config-1")),
+          false,
+        );
+      }
     } finally {
       global.Zotero.Utilities.Internal.exec = originalExec;
     }

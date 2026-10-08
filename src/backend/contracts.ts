@@ -6,6 +6,11 @@ export interface TranslationJobRequest {
   jobDirectory: string;
   sourceLanguage: string;
   targetLanguage: string;
+  provider?: string;
+  model?: string;
+  customBaseURL?: string;
+  concurrency?: number;
+  qps?: number;
 }
 
 export interface TranslationJobProgress {
@@ -13,6 +18,8 @@ export interface TranslationJobProgress {
   completed?: number;
   total?: number;
   message?: string;
+  /** Overall worker progress (0–100), not the current stage percentage. */
+  percent?: number;
 }
 
 export interface TranslationJobResult {

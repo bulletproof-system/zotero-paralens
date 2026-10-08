@@ -1,3 +1,5 @@
+import { translationPerformance } from "./performance";
+import { describeJobFailure } from "./jobError";
 import { bundledBackendProjectDir } from "./install";
 import {
   TranslationBackend,
@@ -82,9 +84,13 @@ export class BabelDocBackend implements TranslationBackend {
       throw new Error("原文必须是现有 PDF");
     }
     const selected = resolveProviderConfig(
-      getPref("provider") || "openai",
-      getPref("model") || "",
-      getPref("customBaseURL") || "",
+      request.provider ?? getPref("provider") ?? "openai",
+      request.model ?? getPref("model") ?? "",
+      request.customBaseURL ?? getPref("customBaseURL") ?? "",
+    );
+    const performance = translationPerformance(
+      request.concurrency ?? getPref("translationConcurrency"),
+      request.qps ?? getPref("translationQps"),
     );
     const apiKey = await readAPIKey(selected.provider);
     if (this.cancelRequested) throw new TranslationCancelledError();
@@ -100,6 +106,7 @@ export class BabelDocBackend implements TranslationBackend {
         model: selected.model,
         baseURL: selected.baseURL,
         apiKey,
+        ...performance,
       });
       // Cancel before spawning any worker if the UI requested it during setup.
       if (this.cancelRequested) throw new TranslationCancelledError();
@@ -135,6 +142,7 @@ export class BabelDocBackend implements TranslationBackend {
                   stage: update.stage,
                   completed: update.completed,
                   total: update.total,
+                  percent: update.percent,
                 });
               }
             } catch {
@@ -147,8 +155,15 @@ export class BabelDocBackend implements TranslationBackend {
       // Wait for the child to exit rather than detaching a potentially
       // billable subprocess. Never import a result after cancellation.
       if (this.cancelRequested) throw new TranslationCancelledError();
-      if (failure)
-        throw new Error("BabelDOC 执行失败；请检查 PDF、虚拟环境及模型配置");
+      if (failure) {
+        let detail: unknown;
+        try {
+          detail = await IOUtils.readJSON(PathUtils.join(job, "error.json"));
+        } catch {
+          /* Older workers/abrupt exits may have no structured error. */
+        }
+        throw new Error(describeJobFailure(detail));
+      }
       const resultPath = PathUtils.join(job, "result.json");
       if (!(await IOUtils.exists(resultPath)))
         throw new Error("BabelDOC 未写入作业结果");

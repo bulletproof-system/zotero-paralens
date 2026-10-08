@@ -14,6 +14,9 @@ declare namespace _ZoteroTypes {
       "backend": string;
       "sourceLanguage": string;
       "targetLanguage": string;
+      "syncScroll": boolean;
+      "translationConcurrency": number;
+      "translationQps": number;
     };
   }
 }

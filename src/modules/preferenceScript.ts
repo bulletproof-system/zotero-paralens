@@ -1,3 +1,5 @@
+import { translationPerformance } from "../backend/performance";
+import { executeHidden } from "../backend/process";
 import { deleteAPIKey, hasAPIKey, saveAPIKey } from "../backend/credentials";
 import {
   getProvider,
@@ -45,6 +47,10 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
   const backendInstall = doc.getElementById(
     "paralens-backend-install",
   ) as HTMLButtonElement | null;
+  const concurrency = doc.getElementById(
+    "paralens-concurrency",
+  ) as HTMLInputElement | null;
+  const qps = doc.getElementById("paralens-qps") as HTMLInputElement | null;
   const keyStatus = doc.getElementById("paralens-key-status");
   const saveStatus = doc.getElementById("paralens-save-status");
   if (
@@ -60,6 +66,8 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
     !backendSelect ||
     !backendInstall ||
     !keyStatus ||
+    !concurrency ||
+    !qps ||
     !saveStatus
   )
     return;
@@ -94,6 +102,18 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
   select.value = getProvider(getPref("provider") || "openai").id;
   model.value = getPref("model") || getProvider(select.value).suggestedModel;
   uvPath.value = getPref("uvPath") || "";
+  // Invalid legacy preferences must not prevent opening settings to repair them.
+  let performance;
+  try {
+    performance = translationPerformance(
+      getPref("translationConcurrency"),
+      getPref("translationQps"),
+    );
+  } catch {
+    performance = translationPerformance(undefined, undefined);
+  }
+  concurrency.value = String(performance.concurrency);
+  qps.value = String(performance.qps);
   sourceLanguage.value = getPref("sourceLanguage") || "en";
   targetLanguage.value = getPref("targetLanguage") || "zh";
 
@@ -154,8 +174,7 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
       projectDir,
       Services.appinfo.OS === "WINNT",
       (path) => IOUtils.exists(path),
-      async (path, args) =>
-        (await Zotero.Utilities.Internal.exec(path, args)) === true,
+      async (path, args) => (await executeHidden(path, args)) === true,
     );
   const showBackend = async () => {
     const selected = backendSelect.value;
@@ -221,7 +240,7 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
         backendStatus,
         msg(`正在安装 ${backend.name}…`, `Installing ${backend.name}…`),
       );
-      const success = await Zotero.Utilities.Internal.exec(
+      const success = await executeHidden(
         uv.path,
         backendInstallArguments(backend.id, projectDir),
       );
@@ -280,6 +299,10 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
             "Source and target languages must differ",
           ),
         );
+      const performance = translationPerformance(
+        Number(concurrency.value),
+        Number(qps.value),
+      );
       if (key.value.trim()) await saveAPIKey(selected.provider, key.value);
       setPref("provider", selected.provider);
       const backend = resolveBackend(backendSelect.value);
@@ -288,6 +311,8 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
           msg("不支持的翻译后端", "Unsupported translation backend"),
         );
       setPref("backend", backend.id);
+      setPref("translationConcurrency", performance.concurrency);
+      setPref("translationQps", performance.qps);
       setPref("sourceLanguage", sourceLanguage.value);
       setPref("targetLanguage", targetLanguage.value);
       setPref("model", selected.model);

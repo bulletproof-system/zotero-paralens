@@ -153,7 +153,10 @@ class AdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             job = Path(folder)
             source = job / "source.pdf"
-            source.write_bytes(b"%PDF-fake")
+            import pymupdf
+            with pymupdf.open() as document:
+                document.new_page().insert_text((50, 60), "Original paragraph for worker tests")
+                document.save(source)
             work = job / "job"
             work.mkdir()
             class Layout:
@@ -163,12 +166,17 @@ class AdapterTests(unittest.TestCase):
                 def __init__(self, **kwargs):
                     self.__dict__.update(kwargs)
                     self.report_interval = 0.1
+            provider_failure = None
             class Translator:
                 def __init__(self, *args, **kwargs):
                     self.api_key = kwargs["api_key"]
                     self.ignore_cache = kwargs["ignore_cache"]
+                    self.client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=lambda **kwargs: None)))
+                def translate(self, _text):
+                    if provider_failure is not None: raise provider_failure
+                    return "Translated paragraph"
             class Monitor:
-                def __init__(self, stages, progress_change_callback, report_interval):
+                def __init__(self, stages, progress_change_callback, report_interval, cancel_event=None, finish_callback=None):
                     self.progress_change_callback = progress_change_callback
                 def __enter__(self): return self
                 def __exit__(self, *_): pass
@@ -177,9 +185,15 @@ class AdapterTests(unittest.TestCase):
                 self.assertTrue(config.translator.ignore_cache)
                 self.assertEqual(config.debug, True)
                 self.assertEqual(config.no_dual, True)
+                self.assertEqual(config.qps, payload.get("qps", 2))
+                self.assertEqual(config.pool_max_workers, payload.get("concurrency", 4))
+                try: config.translator.translate("Private source text")
+                except Exception: pass  # BabelDOC may swallow provider failures.
                 pdf = config.output_dir / "generated.pdf"
-                pdf.write_bytes(b"%PDF-translated")
-                pm.progress_change_callback(type="progress_update", stage="translate", stage_current=1, stage_total=1)
+                with pymupdf.open() as document:
+                    document.new_page().insert_text((50, 60), "Translated paragraph for worker tests")
+                    document.save(pdf)
+                pm.progress_change_callback(type="progress_update", stage="translate", stage_current=1, stage_total=1, overall_progress=40)
                 return types.SimpleNamespace(mono_pdf_path=pdf)
             modules = {
                 "babeldoc": types.ModuleType("babeldoc"),
@@ -193,16 +207,77 @@ class AdapterTests(unittest.TestCase):
                     TranslationConfig=Config, WatermarkOutputMode=types.SimpleNamespace(NoWatermark=0)),
                 "babeldoc.format.pdf.document_il": types.ModuleType("babeldoc.format.pdf.document_il"),
                 "babeldoc.format.pdf.document_il.midend": types.ModuleType("babeldoc.format.pdf.document_il.midend"),
+                "babeldoc.format.pdf.document_il.midend.il_translator_llm_only": types.SimpleNamespace(ILTranslatorLLMOnly=type("ILTranslatorLLMOnly", (), {"translate":lambda self,docs:None})),
                 "babeldoc.format.pdf.document_il.backend": types.ModuleType("babeldoc.format.pdf.document_il.backend"),
                 "babeldoc.format.pdf.document_il.backend.pdf_creater": types.SimpleNamespace(PDFCreater=type("PDFCreater", (), {"write": lambda self, config: None})),
                 "babeldoc.format.pdf.document_il.midend.add_debug_information": types.SimpleNamespace(AddDebugInformation=type("AddDebugInformation", (), {"process": lambda self, docs: None})),
                 "babeldoc.translator": types.ModuleType("babeldoc.translator"),
-                "babeldoc.translator.translator": types.SimpleNamespace(OpenAITranslator=Translator),
+                "babeldoc.translator.translator": types.SimpleNamespace(OpenAITranslator=Translator, set_translate_rate_limiter=lambda qps: self.assertEqual(qps, max(5, payload.get("qps", 2)))),
             }
             payload = {"apiKey": "private-key", "sourceLanguage": "en",
                        "targetLanguage": "zh", "model": "model", "baseURL": "https://example.org/v1"}
             with patch.dict(sys.modules, modules), patch.object(worker, "make_mapping", return_value={"schemaVersion": 1}) as mapping:
-                asyncio.run(worker.run(payload, source, work))
+                progress_updates = []
+                original_atomic = worker.atomic_json
+                def record_progress(path, value):
+                    if Path(path).name == "progress.json": progress_updates.append(value)
+                    original_atomic(path, value)
+                def mapped(*args, on_progress):
+                    for completed in (0, 1, 2): on_progress(completed, 2)
+                    return {"schemaVersion": 1}
+                mapping.side_effect = mapped
+                with patch.object(worker, "atomic_json", side_effect=record_progress):
+                    asyncio.run(worker.run(payload, source, work))
+                self.assertEqual([entry["percent"] for entry in progress_updates], [0, 36, 90, 93, 96, 97])
+                mapping.side_effect = None
+                unavailable = Path(folder) / "unavailable"
+                unavailable.mkdir()
+                mapping.side_effect = MappingUnavailableError("private-key / PDF text")
+                diagnostics = {}
+                asyncio.run(worker.run(payload, source, unavailable, diagnostics))
+                fallback = json.loads((unavailable / "mapping.v1.json").read_text())
+                self.assertEqual(fallback["segments"][0]["status"], "failed")
+                self.assertEqual(fallback["segments"][0]["source"], [])
+                self.assertTrue((unavailable / "translated.pdf").exists())
+                self.assertTrue((unavailable / "result.json").exists())
+                self.assertEqual(diagnostics["stage"], "publish")
+                self.assertNotIn("private-key", (unavailable / "mapping-warning.json").read_text())
+                for index, error in enumerate((PermissionError("private"), MemoryError("private"))):
+                    fatal = Path(folder) / f"fatal-{index}"
+                    fatal.mkdir()
+                    mapping.side_effect = error
+                    with self.assertRaises(type(error)):
+                        asyncio.run(worker.run(payload, source, fatal))
+                    self.assertFalse((fatal / "result.json").exists())
+                cancelled = Path(folder) / "cancelled"
+                cancelled.mkdir()
+                def cancel_during_mapping(*args, on_progress):
+                    (cancelled / "cancel").write_text("")
+                    on_progress(1, 2)
+                mapping.side_effect = cancel_during_mapping
+                with self.assertRaisesRegex(RuntimeError, "cancelled"):
+                    asyncio.run(worker.run(payload, source, cancelled))
+                self.assertFalse((cancelled / "result.json").exists())
+                mapping.side_effect = None
+                provider_failed = Path(folder) / "provider-failed"
+                provider_failed.mkdir()
+                APIConnectionError = type("APIConnectionError", (Exception,), {})
+                provider_failure = APIConnectionError("private-key / private source text")
+                with self.assertRaises(worker.ProviderJobError) as caught:
+                    asyncio.run(worker.run(payload, source, provider_failed))
+                self.assertEqual(worker.safe_job_error(caught.exception, "mapping")["code"], "api_connection")
+                self.assertFalse((provider_failed / "result.json").exists())
+                self.assertFalse((provider_failed / "translated.pdf").exists())
+                provider_failure = None
+                high = Path(folder) / "high-qps"
+                high.mkdir()
+                payload.update(concurrency=8, qps=10)
+                try:
+                    asyncio.run(worker.run(payload, source, high))
+                    self.assertTrue((high / "result.json").exists())
+                finally:
+                    payload.pop("concurrency")
+                    payload.pop("qps")
                 # Windows may hold the intermediate PDFs open even after a
                 # successful translation; the result should remain usable.
                 blocked = Path(folder) / "blocked"

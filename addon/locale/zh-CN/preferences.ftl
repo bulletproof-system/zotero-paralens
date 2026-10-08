@@ -14,3 +14,7 @@ pref-api-key = API Key（留空保持原值）
 pref-delete-key = 删除已存密钥
 pref-save = 保存设置
 pref-privacy = API Key 保存在 Zotero 的凭据管理器中，不写入首选项；保存设置不会发起付费 API 请求。
+
+pref-concurrency = 翻译并发数
+pref-qps = 每秒最多发起请求数
+pref-performance-note = 默认并发 4、每秒最多 2 个请求。仅影响新入队任务，PDF 仍逐个翻译。遇到限流请降低；并发请求可能增加同时计费的请求数，取消无法撤回已发请求。
