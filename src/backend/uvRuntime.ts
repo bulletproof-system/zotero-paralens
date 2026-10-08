@@ -1,3 +1,4 @@
+import { executeHidden } from "./process";
 import { getPref } from "../utils/prefs";
 import { detectUV, UVStatus } from "./uv";
 
@@ -15,8 +16,7 @@ export async function inspectUV(
     env,
     override,
     (path) => IOUtils.exists(path),
-    async (path) =>
-      (await Zotero.Utilities.Internal.exec(path, ["--version"])) === true,
+    async (path) => (await executeHidden(path, ["--version"])) === true,
   );
 }
 

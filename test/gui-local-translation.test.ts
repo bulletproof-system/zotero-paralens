@@ -1,4 +1,5 @@
-﻿import { assert } from "chai";
+import { executeHidden } from "../src/backend/process";
+import { assert } from "chai";
 import {
   deleteAPIKey,
   hasAPIKey,
@@ -67,8 +68,7 @@ describe("isolated native Reader translation with a localhost API", function () 
         instance.data.backendProjectDir,
         Services.appinfo.OS === "WINNT",
         (file) => IOUtils.exists(file),
-        async (file, args) =>
-          (await Zotero.Utilities.Internal.exec(file, args)) === true,
+        async (file, args) => (await executeHidden(file, args)) === true,
       ),
       "Isolated test profile needs the prepared BabelDOC venv",
     );

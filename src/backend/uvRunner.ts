@@ -1,3 +1,4 @@
+import { executeHidden } from "./process";
 import { UVStatus, uvRunArguments } from "./uv";
 import { requireUV } from "./uvRuntime";
 
@@ -31,7 +32,7 @@ export async function runUVWorker(
   if (!(await IOUtils.exists(script))) {
     throw new Error("后端 worker 尚未部署，无法启动翻译任务");
   }
-  const result = await Zotero.Utilities.Internal.exec(
+  const result = await executeHidden(
     uv,
     uvRunArguments(root, script, jobConfigPath),
   );
