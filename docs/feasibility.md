@@ -4,14 +4,14 @@
 
 ## 1. 验证环境
 
-| 项目 | 实际值 |
-| --- | --- |
-| OS | Windows x64 |
-| Zotero | 10.0.3 |
-| Reader 类型定义 | `zotero-types@4.1.3` |
-| BabelDOC | 0.5.20 |
-| Python | 3.12.12（uv 解释器） |
-| toolkit | `zotero-plugin-toolkit@5.2.0` |
+| 项目            | 实际值                        |
+| --------------- | ----------------------------- |
+| OS              | Windows x64                   |
+| Zotero          | 10.0.3                        |
+| Reader 类型定义 | `zotero-types@4.1.3`          |
+| BabelDOC        | 0.5.20                        |
+| Python          | 3.12.12（uv 解释器）          |
+| toolkit         | `zotero-plugin-toolkit@5.2.0` |
 
 本次 BabelDOC 使用临时虚拟环境和 dummy OpenAI key，仅满足 CLI 参数检查，并指定 `--skip-translation`，没有发起翻译 API 请求。临时环境已清理。
 
@@ -23,16 +23,16 @@
 本地 Zotero 附件 PDF（省略个人文件路径；原始论文未纳入仓库）
 ```
 
-| 检查项 | 结果 |
-| --- | --- |
-| 文件大小 | 7,513,450 bytes |
-| SHA-256 | `568eeb6eec6a7e555566c3a90471c4dfc45f94e7e60bb0fc9841520085c32390` |
-| PDF header | `%PDF-1.7` |
-| 页数 | 15 |
-| 文本层 | 15/15 页可提取文本 |
-| 提取文本量 | 88,445 字符（PyMuPDF 1.28.2） |
-| Zotero fulltext cache | `.zotero-ft-cache` 存在且可读，约 87 KB |
-| 页面结构 | 含 CropBox；样本 PDF 结构包含 Rotate 相关信息 |
+| 检查项                | 结果                                                               |
+| --------------------- | ------------------------------------------------------------------ |
+| 文件大小              | 7,513,450 bytes                                                    |
+| SHA-256               | `568eeb6eec6a7e555566c3a90471c4dfc45f94e7e60bb0fc9841520085c32390` |
+| PDF header            | `%PDF-1.7`                                                         |
+| 页数                  | 15                                                                 |
+| 文本层                | 15/15 页可提取文本                                                 |
+| 提取文本量            | 88,445 字符（PyMuPDF 1.28.2）                                      |
+| Zotero fulltext cache | `.zotero-ft-cache` 存在且可读，约 87 KB                            |
+| 页面结构              | 含 CropBox；样本 PDF 结构包含 Rotate 相关信息                      |
 
 文本包含标题、作者和 `Abstract`，确认是数字原生 PDF，适合作为 A1/A2 本机基线。它不是完整 fixture 覆盖集：仓库内尚无可再分发的单栏、多栏、跨页、公式、图注、旋转/裁切样本。
 
@@ -71,12 +71,12 @@ babeldoc --files <source.pdf> --working-dir .scaffold/feasibility-babeldoc \
 
 ### 3.2 字段和对象连续性
 
-| 文件 | 段落对象数 | 非空段落 | 含 debug_id |
-| --- | ---: | ---: | ---: |
-| `paragraph_finder.json` | 312 | 312 | 50 |
-| `il_translated.json` | 312 | 312 | 50 |
-| `add_debug_information.json` | 541 | 541 | 50 |
-| `typsetting.json` | 542 | 541 | 50 |
+| 文件                         | 段落对象数 | 非空段落 | 含 debug_id |
+| ---------------------------- | ---------: | -------: | ----------: |
+| `paragraph_finder.json`      |        312 |      312 |          50 |
+| `il_translated.json`         |        312 |      312 |          50 |
+| `add_debug_information.json` |        541 |      541 |          50 |
+| `typsetting.json`            |        542 |      541 |          50 |
 
 `pdf_paragraph` 实际字段包括：`box {x,y,x2,y2}`、`pdf_style`、`pdf_paragraph_composition`、`xobj_id`、`unicode`、`scale`、`optimal_scale`、`vertical`、`first_line_indent`、`debug_id`、`layout_label`、`layout_id`、`render_order`。页面还包含 `mediabox`、`cropbox`、`page_layout`、`pdf_character`、`pdf_figure`、`page_number` 和 `unit`。
 
@@ -115,11 +115,11 @@ paragraph tracking 字段包括 `input`、`output`、`pdf_unicode`、`llm_transl
 
 ## 5. 阶段 A 结论
 
-| 任务 | 结论 | 闸门 |
-| --- | --- | --- |
-| A1 | 数字 PDF 文本层验证通过；fixture 覆盖集未完成 | 部分通过 |
-| A2 | 解析/IL/排版快照通过；需 mock translator + 适配器输出 mapping | 部分通过 |
-| A3 | 公开接口不足，原型未完成，测试初始化超时 | 未通过/待验证 |
+| 任务 | 结论                                                          | 闸门          |
+| ---- | ------------------------------------------------------------- | ------------- |
+| A1   | 数字 PDF 文本层验证通过；fixture 覆盖集未完成                 | 部分通过      |
+| A2   | 解析/IL/排版快照通过；需 mock translator + 适配器输出 mapping | 部分通过      |
+| A3   | 公开接口不足，原型未完成，测试初始化超时                      | 未通过/待验证 |
 
 下一步：先以 mock translator 验证 tracking 运行时结构；再锁定 BabelDOC 0.5.20 适配器并完成任务内 ID、原/译几何和坐标归一化；补齐开放许可/合成 fixture；隔离模板示例并修复测试初始化超时，再做 Reader 诊断原型。当前没有创建翻译服务、没有保存 API 密钥，也没有修改原始 Zotero PDF。
 

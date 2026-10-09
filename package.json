@@ -2,7 +2,7 @@
   "name": "zotero-paralens",
   "type": "module",
   "version": "0.1.0",
-  "description": "ParaLens：Zotero PDF 全文翻译与双语悬停对照（规划阶段）",
+  "description": "ParaLens：Zotero PDF 全文翻译与双语悬停对照",
   "config": {
     "addonName": "ParaLens",
     "addonID": "paralens@luotiantian.top",
@@ -14,7 +14,7 @@
   "homepage": "https://github.com/bulletproof-system/zotero-paralens#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/REPLACE_ME/zotero-paralens.git"
+    "url": "git+https://github.com/bulletproof-system/zotero-paralens.git"
   },
   "license": "AGPL-3.0-or-later",
   "scripts": {
@@ -28,6 +28,7 @@
     "release": "zotero-plugin release",
     "pretest": "node scripts/stage-backend.cjs",
     "test": "zotero-plugin test",
+    "test:unit": "node --test test/*.test.cjs",
     "test:mapping": "node --test test/mapping-contract.test.cjs",
     "test:backend-settings": "node --test test/backend-settings.test.cjs",
     "test:babeldoc": "node --test test/babeldoc-backend.test.cjs test/backend-install.test.cjs",
@@ -44,6 +45,7 @@
     "@zotero-plugin/eslint-config": "^0.6.10",
     "chai": "^6.2.2",
     "eslint": "^9.39.5",
+    "globals": "^14.0.0",
     "mocha": "^11.8.0",
     "prettier": "^3.9.9",
     "typescript": "^5.9.3",

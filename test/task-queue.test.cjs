@@ -1,4 +1,3 @@
-/* global structuredClone, setImmediate */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");

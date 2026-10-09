@@ -13,10 +13,15 @@ uv sync --project "<Zotero profile>/paralens/backend" --python 3.12
 ```ts
 const jobDirectory = await createBabelDocJobDirectory();
 const backend = new BabelDocBackend(); // 默认使用已部署在 Zotero profile 的后端
-const result = await backend.translate({
-  sourcePath: absolutePdfPath, jobDirectory,
-  sourceLanguage: "en", targetLanguage: "zh",
-}, onProgress);
+const result = await backend.translate(
+  {
+    sourcePath: absolutePdfPath,
+    jobDirectory,
+    sourceLanguage: "en",
+    targetLanguage: "zh",
+  },
+  onProgress,
+);
 // 校验、导入译文 PDF 后调用 bindAttachmentKeys(result.mapping, sourceKey, targetKey)
 ```
 
@@ -29,6 +34,7 @@ const result = await backend.translate({
 离线回归：`python -m unittest discover -s backend/tests -v`；`npm run test:babeldoc`；`npx tsc --noEmit`。
 
 为避免不同提供商/URL 共用 BabelDOC 默认翻译缓存（缓存键没有 API Base URL），本插件明确禁用该缓存；重复翻译可能再次收费，点击翻译前仍需确认。
+
 ## 验证翻译效果
 
 构建插件：`npm run build`（生成 `.scaffold/build/para-lens.xpi`）。现可通过右键 PDF 明确触发真实 API 翻译，开始前会确认可能产生费用；无需在命令行输入密钥。

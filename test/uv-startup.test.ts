@@ -253,6 +253,11 @@ describe("ParaLens uv startup", function () {
   });
 
   it("installs a missing backend only after clicking Install", async function () {
+    // This integration test requires the isolated runner's prepared backend
+    // and mock uv. Ordinary CI must skip it before probing the backend.
+    const mockUV = Services.env.get("PARALENS_TEST_INSTALL_UV");
+    const record = Services.env.get("PARALENS_TEST_INSTALL_ARGS");
+    if (!mockUV || !record) this.skip();
     const instance = Zotero[config.addonInstance] as {
       data: { backendProjectDir?: string; uv?: { available: boolean } };
     };
@@ -268,9 +273,6 @@ describe("ParaLens uv startup", function () {
       "This test must use a prepared isolated venv",
     );
     const oldUV = instance.data.uv;
-    const mockUV = Services.env.get("PARALENS_TEST_INSTALL_UV");
-    const record = Services.env.get("PARALENS_TEST_INSTALL_ARGS");
-    if (!mockUV || !record) this.skip();
     let win: Window | undefined;
     try {
       instance.data.backendProjectDir = PathUtils.join(

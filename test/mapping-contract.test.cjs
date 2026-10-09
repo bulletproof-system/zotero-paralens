@@ -1,4 +1,3 @@
-/* global structuredClone, Zotero */
 global.Zotero = { Prefs: { get: () => false, set: () => {} } };
 const { test } = require("node:test");
 const assert = require("node:assert/strict");

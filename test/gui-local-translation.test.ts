@@ -120,6 +120,7 @@ describe("isolated native Reader translation with a localhost API", function () 
         // Disposable test data only. Preserve Zotero’s real error for diagnosis.
         throw new Error(
           `Zotero attachment import failed: ${error instanceof Error ? error.stack : String(error)}`,
+          { cause: error },
         );
       }
       checkpoint("after-attachment-import");
