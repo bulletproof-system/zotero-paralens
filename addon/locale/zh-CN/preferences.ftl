@@ -18,3 +18,9 @@ pref-privacy = API Key 保存在 Zotero 的凭据管理器中，不写入首选�
 pref-concurrency = 翻译并发数
 pref-qps = 每秒最多发起请求数
 pref-performance-note = 默认并发 4、每秒最多 2 个请求。仅影响新入队任务，PDF 仍逐个翻译。遇到限流请降低；并发请求可能增加同时计费的请求数，取消无法撤回已发请求。
+
+pref-legal-title = 许可证、第三方声明与源码
+pref-legal-notice = 版权所有：ltt 和 ParaLens 贡献者；上游作者保留其权利。ParaLens 以 AGPL-3.0-or-later 按现状提供，不提供保证。你可以按适用许可修改和再分发。下方离线显示完整许可文本，不发起网络请求。
+pref-legal-source-note = 源码链接对应安装包版本。开发构建可能包含未公开的修改；旧版本可能没有源码附件，访问也取决于仓库可见性。
+pref-legal-source = 浏览对应版本源码
+pref-legal-archive = 下载 Release 源码附件

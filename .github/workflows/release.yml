@@ -19,3 +19,25 @@ jobs:
       build: "npm run build"
       release: "npm run release"
     secrets: inherit
+
+  source-archive:
+    needs: create-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the exact release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+      - name: Create matching source archive and checksums
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/create-source-archive.cjs "$RELEASE_TAG"
+      - name: Upload source materials to the same release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release upload "$RELEASE_TAG" .scaffold/source/* --clobber

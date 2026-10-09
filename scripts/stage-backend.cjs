@@ -1,4 +1,5 @@
 // Keep the packaged Python sources identical to the editable backend project.
+require("./stage-licenses.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 const root = path.resolve(__dirname, "..");

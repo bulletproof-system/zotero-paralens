@@ -1,5 +1,10 @@
 # BabelDOC 后端（开发接入）
 
+许可与源码：BabelDOC 固定为 0.5.20，保留上游 AGPL 声明；PyMuPDF 等间接依赖
+仍需按实际安装版本核对。插件不打包 .venv、模型或字体。详见
+[第三方许可声明](../THIRD_PARTY_NOTICES.md) 和
+[源码分发说明](../docs/source-distribution.md)。
+
 固定 `babeldoc==0.5.20`、Python 3.12。`worker.py` 使用 BabelDOC `OpenAITranslator`、`TranslationConfig`、`do_translate` 生成**单语**译文；debug IL 的翻译前、中、排版后快照经 `mapping_adapter.py` 变为不带 Zotero 附件 key 的 `mapping.v1` 草稿。源/译 PDF 分别计算 SHA-256，译文附件导入后再调用 `bindAttachmentKeys` 绑定。
 
 ## 初始化（须由用户明确允许下载、联网费用与资源开销）

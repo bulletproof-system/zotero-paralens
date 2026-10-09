@@ -1,0 +1,27 @@
+{
+  "project": {
+    "name": "zotero-paralens",
+    "version": "0.1.3",
+    "license": "AGPL-3.0-or-later",
+    "source": "https://github.com/bulletproof-system/zotero-paralens/tree/v0.1.3",
+    "sourceArchive": "https://github.com/bulletproof-system/zotero-paralens/releases/download/v0.1.3/zotero-paralens-0.1.3-source.tar.gz"
+  },
+  "bundled": [
+    {
+      "name": "zotero-plugin-toolkit",
+      "version": "5.2.0",
+      "license": "MIT",
+      "licenseFile": "licenses/zotero-plugin-toolkit-LICENSE.txt"
+    }
+  ],
+  "installedSeparately": [
+    {
+      "name": "babeldoc",
+      "version": "0.5.20",
+      "license": "AGPL-3.0 (upstream declaration)",
+      "source": "https://github.com/funstory-ai/BabelDOC/tree/v0.5.20",
+      "licenseFile": "licenses/BabelDOC-0.5.20-LICENSE.txt"
+    }
+  ],
+  "limitations": "Python transitive dependencies, models and fonts are not a complete audited inventory. Development builds can contain unpublished changes."
+}

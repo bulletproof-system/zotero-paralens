@@ -19,8 +19,10 @@ import {
   resolveBackend,
 } from "../backend/selection";
 import { getPref, setPref } from "../utils/prefs";
+import { registerLicenseUI } from "../utils/license";
 
 export async function registerPrefsScripts(win: Window): Promise<void> {
+  registerLicenseUI(win);
   const doc = win.document;
   const select = doc.getElementById(
     "paralens-provider",

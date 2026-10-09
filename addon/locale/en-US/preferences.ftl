@@ -18,3 +18,9 @@ pref-privacy = API keys are stored in Zotero's credential manager, not preferenc
 pref-concurrency = Translation concurrency
 pref-qps = Maximum request starts per second
 pref-performance-note = Defaults: concurrency 4, 2 requests/second. Applies to newly queued jobs; PDFs still run one at a time. Lower these if rate limited. Concurrent requests may be billed simultaneously; cancellation cannot recall sent requests.
+
+pref-legal-title = Licenses, third-party notices and source code
+pref-legal-notice = Copyright ltt and ParaLens contributors; upstream authors retain their rights. ParaLens is provided without warranty under AGPL-3.0-or-later. You may modify and redistribute it under the applicable license terms. Full license texts are shown below without a network request.
+pref-legal-source-note = Source links match the package version. Development builds may include unpublished changes; old releases may lack a source attachment. Access also depends on the repository visibility.
+pref-legal-source = Browse versioned source
+pref-legal-archive = Download release source archive
