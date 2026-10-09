@@ -37,14 +37,14 @@ npm run build
 构建成功后，安装包位于：
 
 ```text
-.scaffold/build/para-lens.xpi
+.scaffold/build/zotero-paralens.xpi
 ```
 
 ### 2. 在 Zotero 中安装
 
 1. 打开 Zotero 的插件管理器。
 2. 点击齿轮菜单，选择「从文件安装插件…」。
-3. 选择构建生成的 `para-lens.xpi`。
+3. 选择构建生成的 `zotero-paralens.xpi`。
 4. 按 Zotero 提示完成安装并重启。
 
 > 当前 `package.json` 的仓库配置仍有 `REPLACE_ME` 占位符，发布前需修正相关发布与自动更新配置。请勿将开发构建的更新链接视为可用的正式更新渠道。

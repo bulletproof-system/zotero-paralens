@@ -37,7 +37,7 @@ const result = await backend.translate(
 
 ## 验证翻译效果
 
-构建插件：`npm run build`（生成 `.scaffold/build/para-lens.xpi`）。现可通过右键 PDF 明确触发真实 API 翻译，开始前会确认可能产生费用；无需在命令行输入密钥。
+构建插件：`npm run build`（生成 `.scaffold/build/zotero-paralens.xpi`）。现可通过右键 PDF 明确触发真实 API 翻译，开始前会确认可能产生费用；无需在命令行输入密钥。
 
 只验证本地排版/导出而不调用真实 API 时，在已安装 BabelDOC 0.5.20 的环境运行：
 
