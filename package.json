@@ -46,7 +46,7 @@
     "@zotero-plugin/eslint-config": "^0.6.10",
     "chai": "^6.2.2",
     "adm-zip": "^0.5.18",
-    "eslint": "^9.39.5",
+    "eslint": "^10.12.0",
     "globals": "^14.0.0",
     "mocha": "^11.8.0",
     "prettier": "^3.9.9",
