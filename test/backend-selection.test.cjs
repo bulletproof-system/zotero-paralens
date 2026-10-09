@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const { buildSync } = require("esbuild");
 
-const outfile = path.resolve(".scaffold", "backend-selection-test.cjs");
+const outdir = path.resolve(".scaffold", "backend-selection-tests");
 buildSync({
   entryPoints: [
     "src/backend/selection.ts",
@@ -12,12 +12,14 @@ buildSync({
   bundle: true,
   platform: "node",
   format: "cjs",
-  outdir: path.dirname(outfile),
+  outdir,
   outExtension: { ".js": ".cjs" },
 });
-const { BACKENDS, resolveBackend, backendInstallArguments } = require(outfile);
+const { BACKENDS, resolveBackend, backendInstallArguments } = require(
+  path.join(outdir, "selection.cjs"),
+);
 const { isBackendInstalled } = require(
-  path.resolve(".scaffold", "installationStatus.cjs"),
+  path.join(outdir, "installationStatus.cjs"),
 );
 
 test("only implemented backends appear in the selector", () => {
