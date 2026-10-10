@@ -294,19 +294,19 @@ test("cancelled tasks can be deleted durably without removing active/completed j
   const ids = await queue.enqueue([input("AAAA1111"), input("BBBB2222")]);
   while (!started) await tick();
   assert.equal(
-    await queue.removeCancelled(ids[0]),
+    await queue.removeTask(ids[0]),
     false,
     "Running job must not be deleted",
   );
   assert.equal(
-    await queue.removeCancelled(ids[1]),
+    await queue.removeTask(ids[1]),
     false,
     "Queued job must be cancelled first",
   );
   await queue.cancelPending(ids[1]);
-  assert.equal(await queue.removeCancelled(ids[1]), true);
+  assert.equal(await queue.removeTask(ids[1]), true);
   assert.equal(
-    await queue.removeCancelled(ids[1]),
+    await queue.removeTask(ids[1]),
     false,
     "Deleting twice is harmless",
   );
@@ -314,7 +314,7 @@ test("cancelled tasks can be deleted durably without removing active/completed j
   assert.equal(queue.snapshot().length, 1);
   release();
   await queue.waitForIdle();
-  assert.equal(await queue.removeCancelled(ids[0]), false);
+  assert.equal(await queue.removeTask(ids[0]), false);
   assert.equal(calls, 1);
   const restored = new TranslationQueue(storage(disk.value), async () =>
     assert.fail("No implicit API"),
@@ -323,55 +323,57 @@ test("cancelled tasks can be deleted durably without removing active/completed j
   assert.equal(restored.snapshot().length, 1);
 });
 
-test("cancelled deletion keeps its row after disk failure and cannot be resurrected by racing enqueue", async () => {
-  const initial = {
-    ...input("AAAA1111"),
-    id: "cancelled-history",
-    state: "cancelled",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  const disk = storage([initial]);
-  let fail = false,
-    hold = false,
-    release,
-    entered;
-  const normalWrite = disk.write.bind(disk);
-  disk.write = async (value) => {
-    if (fail) throw Error("disk full");
-    if (hold) {
-      entered = true;
-      await new Promise((resolve) => {
-        release = resolve;
-      });
-      hold = false;
-    }
-    return normalWrite(value);
-  };
-  const queue = new TranslationQueue(disk, async () => {});
-  await queue.initialize();
-  fail = true;
-  await assert.rejects(queue.removeCancelled(initial.id), /disk full/);
-  assert.equal(queue.snapshot()[0].id, initial.id);
-  assert.equal(disk.value[0].id, initial.id);
-  fail = false;
-  hold = true;
-  const deleting = queue.removeCancelled(initial.id);
-  while (!entered) await tick();
-  const enqueuing = queue.enqueue([input("BBBB2222")]);
-  release();
-  assert.equal(await deleting, true);
-  await enqueuing;
-  await queue.waitForIdle();
-  assert.equal(
-    queue.snapshot().some((task) => task.id === initial.id),
-    false,
-  );
-  assert.equal(
-    disk.value.some((task) => task.id === initial.id),
-    false,
-  );
-});
+for (const state of ["cancelled", "failed"]) {
+  test(`${state} deletion keeps its row after disk failure and cannot be resurrected by racing enqueue`, async () => {
+    const initial = {
+      ...input("AAAA1111"),
+      id: `${state}-history`,
+      state,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const disk = storage([initial]);
+    let fail = false,
+      hold = false,
+      release,
+      entered;
+    const normalWrite = disk.write.bind(disk);
+    disk.write = async (value) => {
+      if (fail) throw Error("disk full");
+      if (hold) {
+        entered = true;
+        await new Promise((resolve) => {
+          release = resolve;
+        });
+        hold = false;
+      }
+      return normalWrite(value);
+    };
+    const queue = new TranslationQueue(disk, async () => {});
+    await queue.initialize();
+    fail = true;
+    await assert.rejects(queue.removeTask(initial.id), /disk full/);
+    assert.equal(queue.snapshot()[0].id, initial.id);
+    assert.equal(disk.value[0].id, initial.id);
+    fail = false;
+    hold = true;
+    const deleting = queue.removeTask(initial.id);
+    while (!entered) await tick();
+    const enqueuing = queue.enqueue([input("BBBB2222")]);
+    release();
+    assert.equal(await deleting, true);
+    await enqueuing;
+    await queue.waitForIdle();
+    assert.equal(
+      queue.snapshot().some((task) => task.id === initial.id),
+      false,
+    );
+    assert.equal(
+      disk.value.some((task) => task.id === initial.id),
+      false,
+    );
+  });
+}
 
 test("performance is snapshotted per job and legacy jobs receive defaults without auto-running", async () => {
   const disk = storage();
@@ -570,4 +572,43 @@ test("automatic repair is opt-in per task and survives restore/restart without e
   );
   await restored.waitForIdle();
   assert.equal(executed.at(-1), true);
+});
+
+test("failed task deletion is durable and never starts work or removes other terminal states", async () => {
+  const disk = storage();
+  let calls = 0;
+  const queue = new TranslationQueue(disk, async () => {
+    calls++;
+    throw Error("translation_failed");
+  });
+  const [id] = await queue.enqueue([input("AAAA1111")]);
+  await queue.waitForIdle();
+  assert.equal(queue.snapshot()[0].state, "failed");
+  assert.equal(await queue.removeTask(id), true);
+  assert.equal(await queue.removeTask(id), false);
+  assert.deepEqual(queue.snapshot(), []);
+  assert.deepEqual(disk.value, []);
+  assert.equal(calls, 1, "Deleting must not retry a failed translation");
+  const restored = new TranslationQueue(storage(disk.value), async () => {
+    assert.fail("Deleting/restoring history must not execute any job");
+  });
+  await restored.initialize();
+  assert.deepEqual(restored.snapshot(), []);
+  for (const state of ["completed", "partial", "interrupted"]) {
+    const initial = {
+      ...input("BBBB2222"),
+      id: `${state}-history`,
+      state,
+      targetKey: "PDF12345",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const otherDisk = storage([initial]);
+    const other = new TranslationQueue(otherDisk, async () =>
+      assert.fail("No API work"),
+    );
+    assert.equal(await other.removeTask(initial.id), false);
+    assert.equal(other.snapshot()[0].id, initial.id);
+    assert.equal(otherDisk.value[0].targetKey, initial.targetKey);
+  }
 });

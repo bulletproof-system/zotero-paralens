@@ -120,6 +120,21 @@ describe("live translation queue progress", function () {
       assert.equal(pending.querySelector("progress")!.value, 92);
       assert.include(pending.textContent!, "mapping_failed");
       assert.include(pending.textContent!, "失败");
+      assert.notInclude(
+        row.textContent!,
+        "删除任务",
+        "Completed jobs cannot be deleted",
+      );
+      const failedDeleteButton = Array.from(
+        pending.querySelectorAll("button"),
+      ).find((entry) => entry.textContent === "删除任务") as HTMLButtonElement;
+      assert.isDefined(failedDeleteButton, "Failed jobs offer a delete button");
+      failedDeleteButton.click();
+      await wait(
+        () => !win!.document.querySelector(`[data-task-id="${ids[1]}"]`),
+      );
+      assert.equal(queue.snapshot().length, 1);
+      assert.equal(queue.snapshot()[0].id, ids[0]);
     } finally {
       await queue.stop();
       release?.();

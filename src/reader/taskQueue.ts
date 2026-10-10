@@ -333,17 +333,18 @@ export class TranslationQueue {
     this.changed();
     return true;
   }
-  /** Delete only cancelled history, never an active job or its PDF attachments.
+  /** Delete only failed/cancelled history, never an active job or its artifacts.
    * Persist before removing the live row; serialize with other writes so a
    * racing enqueue/progress save cannot resurrect the deleted record.
    */
-  async removeCancelled(id: string): Promise<boolean> {
+  async removeTask(id: string): Promise<boolean> {
     await this.initialize();
     const next = this.saves
       .catch(() => {})
       .then(async () => {
         const task = this.tasks.find((item) => item.id === id);
-        if (!task || task.state !== "cancelled") return false;
+        if (!task || !["failed", "cancelled"].includes(task.state))
+          return false;
         const remaining = this.snapshot().filter((item) => item.id !== id);
         await this.storage.write(remaining);
         this.tasks = this.tasks.filter((item) => item.id !== id);

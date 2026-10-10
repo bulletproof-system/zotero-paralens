@@ -150,10 +150,8 @@ export async function showTaskQueue(
             )
               await queue.restart(task.id);
           });
-          if (task.state === "cancelled")
-            action(view.actions, "删除任务", () =>
-              queue.removeCancelled(task.id),
-            );
+          if (task.state === "cancelled" || task.state === "failed")
+            action(view.actions, "删除任务", () => queue.removeTask(task.id));
           if (task.state === "partial" && task.targetKey)
             action(view.actions, "打开保留译文", () => open(task));
           if (task.state === "completed")
