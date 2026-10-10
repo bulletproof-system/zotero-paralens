@@ -34,7 +34,7 @@ function copy(source, target) {
 copy(path.join(root, "LICENSE"), path.join(out, "LICENSE.txt"));
 copy(
   path.join(root, "THIRD_PARTY_NOTICES.md"),
-  path.join(out, "THIRD_PARTY_NOTICES.md"),
+  path.join(out, "content/licenses/THIRD_PARTY_NOTICES.md"),
 );
 copy(
   path.join(root, "docs/source-distribution.md"),
@@ -46,8 +46,10 @@ for (const file of [
 ])
   copy(path.join(root, "licenses", file), path.join(out, "licenses", file));
 // Local readable texts under content/ are available to the settings-page viewer.
-for (const file of ["LICENSE.txt", "THIRD_PARTY_NOTICES.md"])
-  copy(path.join(out, file), path.join(out, "content/licenses", file));
+copy(
+  path.join(out, "LICENSE.txt"),
+  path.join(out, "content/licenses/LICENSE.txt"),
+);
 for (const file of [
   "BabelDOC-0.6.4-LICENSE.txt",
   "zotero-plugin-toolkit-LICENSE.txt",

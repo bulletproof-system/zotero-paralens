@@ -9,7 +9,6 @@ const pkg = JSON.parse(
 const archive = new Zip(path.join(root, ".scaffold/build/zotero-paralens.xpi"));
 const required = [
   ["LICENSE.txt", "LICENSE"],
-  ["THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"],
   ["docs/source-distribution.md", "docs/source-distribution.md"],
   [
     "licenses/zotero-plugin-toolkit-LICENSE.txt",
@@ -30,6 +29,17 @@ const required = [
     "licenses/BabelDOC-0.6.4-LICENSE.txt",
   ],
 ];
+assert.deepEqual(
+  archive
+    .getEntries()
+    .filter(
+      (entry) =>
+        path.posix.basename(entry.entryName) === "THIRD_PARTY_NOTICES.md",
+    )
+    .map((entry) => entry.entryName),
+  ["content/licenses/THIRD_PARTY_NOTICES.md"],
+  "XPI must contain exactly one third-party notice at the settings-readable path",
+);
 for (const [entry, source] of required) {
   assert.ok(archive.getEntry(entry), "Missing legal material in XPI: " + entry);
   assert.equal(

@@ -1,70 +1,94 @@
-# BabelDOC 后端（开发接入）
+# BabelDOC 后端开发接口
 
-许可与源码：BabelDOC 固定为 0.6.4，保留上游 AGPL 声明；PyMuPDF 等间接依赖
-仍需按实际安装版本核对。插件不打包 .venv、模型或字体。详见
-[第三方许可声明](../THIRD_PARTY_NOTICES.md) 和
-[源码分发说明](../docs/source-distribution.md)。
+`backend/pyproject.toml` 要求 Python 3.12，并固定 `babeldoc==0.6.4`。`worker.py` 通过 BabelDOC Python API 的 `OpenAITranslator`、`TranslationConfig` 和 `do_translate` 生成单语译文；`mapping_adapter.py` 对照 IL 与实际 PDF 几何导出 `mapping.v1` 草稿。
 
-固定 `babeldoc==0.6.4`、Python 3.12。`worker.py` 使用 BabelDOC `OpenAITranslator`、`TranslationConfig`、`do_translate` 生成**单语**译文；debug IL 的翻译前、中、排版后快照经 `mapping_adapter.py` 变为不带 Zotero 附件 key 的 `mapping.v1` 草稿。源/译 PDF 分别计算 SHA-256，译文附件导入后再调用 `bindAttachmentKeys` 绑定。
+BabelDOC 上游许可文本及版本化源码入口见[第三方声明](../THIRD_PARTY_NOTICES.md)和[源码分发说明](../docs/source-distribution.md)。Python 间接依赖、模型和字体不属于完整审查清单；XPI 不打包 `.venv`、模型或字体。
 
-## 部分失败与产物保留
+## 部署与调用
 
-发现疑似漏译、漏译检查／补译异常或部分提供商请求失败时，worker 尽可能继续排版已翻译／未翻译的段落，并在可用结果中返回 `completion: "partial"` 和只含白名单错误分类的 `warning`。映射异常也会保留可用 PDF，以降级映射供摘要校验；完整 API 失败、主动取消以及初始翻译或排版的致命错误不会伪装成成功结果；检查／补译自身的异常只产生安全警告，不阻止尝试排版。
+XPI 包含 `pyproject.toml`、`worker.py`、`mapping_adapter.py`，启动时部署至 `<Zotero profile>/paralens/backend/`。仅替换三个受管文件，不删除 `.venv`、`uv.lock` 或用户数据；不自动安装依赖。
 
-默认 `autoRepair: false`（旧配置未传该字段也视为关闭），仅执行英文→中文的疑似漏译检查，不发起额外补译 API 请求，也不改写段落 IL。检查长英文残留与空白译文，命中时按部分完成继续尝试生成 PDF；短名称、缩写和公式不因含英文就被强制判为漏译。该检查不是语义正确性的保证。
-
-只有显式传入 `autoRepair: true` 才自动补译未通过质量检查的正文／图注等段落；使用明确的中文补译提示并保留公式、样式和引用标记。每段最多两次尝试（8192／16384 输出 token 预算），各次 API 请求设置 60 秒超时；该阶段禁用 SDK／连接层的嵌套重试，并将限流错误转换为安全分类，避免触发 BabelDOC 的 100 次限流重试。API 故障会结束补译并尝试保存部分译文，不继续逐段重试。60 秒是 HTTP 请求超时配置，不是整份 PDF 的处理时限。
-
-补译候选在独立 IL 副本中解析、核验，只有通过检查才替换现有段落；失败候选不会破坏已有译文。进度随段落推进，`translation-quality.json` 只记录疑似漏译、已修复、剩余段落、尝试次数等安全统计（只检查模式的尝试次数为 0）与有限的失败分类计数。`translation_untranslated`（检测到疑似漏译或补译仍未通过）、`translation_incomplete`（API 内容空／截断）和 `translation_quality_failed`（检查／补译内部异常）区分显示，不保存原文或 API 返回文本。
-
-前端对部分结果仍校验固定作业路径、映射结构以及源／译 PDF 的 SHA-256，再导入标注为「部分翻译，需核对」的附件；不保存为默认双语对照。译文已导入但映射保存失败时，同样保留已校验的 PDF。
-
-失败或部分完成作业保留 `babeldoc-*`、`output-*` 工作／输出目录，并写入不含正文或凭据的 `artifact-retention.json`；正常完成才清理中间目录。一次性密钥配置仍在读取后删除。若排版未成功，原有中间文件会保留，但不保证生成 `translated.pdf`。作业目录位于 Zotero profile 的 `paralens-jobs/job-*`，可能包含私有文档内容；需要用户自行管理磁盘空间，勿直接上传。
-
-「重新开始」在队列持久化成功后替换旧记录，不删除这些产物；重复点击不会额外创建任务，写入失败也不会启动新的计费请求。
-
-## 初始化（须由用户明确允许下载、联网费用与资源开销）
+用户明确允许联网与开销后，点击设置页「安装后端」，或显式执行：
 
 ```sh
 uv sync --project "<Zotero profile>/paralens/backend" --python 3.12
 ```
 
-模型和字体的首次加载可能另外联网；`uv run --no-sync --offline` 只控制 uv 的依赖获取，**不能**阻断 BabelDOC 或翻译 API 的网络调用。设置页保存提供商、模型、API Key，并检测 uv。右键单击 Zotero 中的单个 PDF 附件（或仅有一个 PDF 的文献条目），选择「ParaLens：翻译 PDF」，确认 API 可能收费后运行；成功时译文导入 Zotero 并打开原文/译文的原生 Reader。若要重新打开，右键原文选择「打开双语对照」。后端亦可由开发者直接调用：
+作业启动使用 `uv run --no-sync --offline`。这些参数限制 uv 的包下载，不阻止 BabelDOC 资源获取或翻译 API 联网。安装和测试的完整说明见[后端设置指南](../docs/backend-setup.md)。
+
+TypeScript 调用接口定义在 `src/backend/contracts.ts`：
 
 ```ts
 const jobDirectory = await createBabelDocJobDirectory();
-const backend = new BabelDocBackend(); // 默认使用已部署在 Zotero profile 的后端
+const backend = new BabelDocBackend();
 const result = await backend.translate(
   {
     sourcePath: absolutePdfPath,
     jobDirectory,
     sourceLanguage: "en",
     targetLanguage: "zh",
+    autoRepair: false,
   },
   onProgress,
 );
-// 校验、导入译文 PDF 后调用 bindAttachmentKeys(result.mapping, sourceKey, targetKey)
+// 输出校验通过并导入译文附件后，使用实际附件 key 绑定映射。
+const mapping = bindAttachmentKeys(result.mapping, sourceKey, targetKey);
 ```
 
-插件 XPI 包含 `pyproject.toml`、`worker.py`、`mapping_adapter.py`。插件启动时将它们部署到 `PathUtils.profileDir/paralens/backend/`（Windows 通常为 `%APPDATA%\Zotero\Zotero\Profiles\<profile>\paralens\backend\`），设置页展示当前实际路径。重新启动/升级只替换这三个受管脚本文件，保留 `.venv/` 与 `uv.lock`；卸载不会自动删除用户 profile 内数据。**只安装后端脚本，不自动安装 Python、BabelDOC 或模型**：用户同意联网/开销后，用上面的 `uv sync` 在该路径创建 `.venv/`。开发者也可显式传入本仓库 `backend/` 作为 `BabelDocBackend` 第一个参数。菜单、附件导入和 Reader 调用已接通；离线单页 PDF 使用本地替身译文实测成功（1 条可对齐映射），现已使用用户授权的已保存 API Key 完成单页双段与两页合成 PDF 的实际试译（两页结果 2 条逐页段落映射均可用）；复杂论文尚待验证。不自动运行 `uv sync`，也不在失败时改用其他后端。
+`BabelDocBackend` 默认使用 profile 中的部署目录，也接受开发者显式传入的项目目录。PDF 和项目路径必须为绝对路径，作业目录必须由 `createBabelDocJobDirectory` 创建且为空。提供商、模型和性能参数可由请求覆盖，否则读取非敏感首选项；密钥在执行时从凭据管理器读取。`autoRepair` 只在请求明确为 `true` 时开启。
 
-作业位于 Zotero profile 下 `paralens-jobs/job-*`；含只在运行期间存在的私有 `config-*`（API Key）、`progress.json`、`translated.pdf`、`mapping.v1.json`、`result.json`；失败时留 `error.json`，不放错误异常原文/密钥。退出/失败均删除临时配置文件和 BabelDOC debug 工作目录；原 PDF 不改写。`cancel()` 在活动作业目录写入取消标记；仅在进度回调时生效，尚不保证即时中断网络请求。
+## 配置和产物
 
-映射是**保守**的：只有 IL 段落身份/数量未改变，且原文、译文整段文本能分别在最终 PDF 中定位时才给 `aligned` 与 quads；其余记 `uncertain`，不允许 Reader 高亮。BabelDOC 的 debug IL 不提供稳定的跨页段落对齐 API；跨页合并/布局变化、OCR、反复的相同文本都可能失配，需要人工样本验证。本机已用实际安装的 BabelDOC 和用户授权 API 完成隔离 Zotero 的真实单页与两页合成 PDF 翻译，并离线回放双向悬停；该验证不覆盖实际论文的复杂版式。
+作业位于 `<Zotero profile>/paralens-jobs/job-*`。受限一次性 `config-*` 含密钥，worker 读取后在加载模型和联网前删除；TypeScript 层也在结束时清理。密钥不进入命令行或错误输出。
 
-离线回归：`python -m unittest discover -s backend/tests -v`；`npm run test:babeldoc`；`npx tsc --noEmit`。
+| 文件                       | 用途                                    |
+| -------------------------- | --------------------------------------- |
+| `progress.json`            | 原子更新的阶段和总体百分比              |
+| `translation-quality.json` | 疑似漏译／补译计数，不含正文或 API 输出 |
+| `translated.pdf`           | 发布到固定路径的译文 PDF                |
+| `mapping.v1.json`          | 不带 Zotero 附件 key 的映射草稿         |
+| `result.json`              | PDF／映射路径和可选部分完成状态         |
+| `error.json`               | 失败时的白名单分类，不含原始异常文本    |
+| `partial-warning.json`     | 部分结果的安全警告                      |
+| `artifact-retention.json`  | 工作／输出目录保留标志                  |
+| `cleanup-warning.json`     | 清理失败的安全提示                      |
 
-为避免不同提供商/URL 共用 BabelDOC 默认翻译缓存（缓存键没有 API Base URL），本插件明确禁用该缓存；重复翻译可能再次收费，点击翻译前仍需确认。
+作业目录可能包含私有 PDF 和 IL；保留文件不代表可以公开上传。
 
-## 验证翻译效果
+## 检查、补译和请求控制
 
-构建插件：`npm run build`（生成 `.scaffold/build/zotero-paralens.xpi`）。现可通过右键 PDF 明确触发真实 API 翻译，开始前会确认可能产生费用；无需在命令行输入密钥。
+默认 `autoRepair: false`；字段缺失也视为关闭。英文→中文只检查长英文残留或空白译文，不请求补译，也不改写 IL。检查是启发式检测，不能保证语义正确。
 
-只验证本地排版/导出而不调用真实 API 时，在已安装 BabelDOC 0.6.4 的环境运行：
+显式开启后，仅对疑似漏译的正文／图注等段落补译。候选使用原始结构，在独立 IL 副本中解析，核验通过才替换现有段落；失败候选不破坏已有译文。每段最多两次，预算 8192／16384 输出 tokens，补译请求设置 60 秒超时；故障停止补译，不进行长时间逐段重试。HTTP 超时不是整个 PDF 的处理时限。
+
+请求并发和起始速率独立限制，正文、回退、重试及补译共享 gate。默认并发 4、QPS 2，范围分别 1–16 和 1–10。SDK 隐式重试关闭，正文空白／截断输出有一次更大预算尝试，连接／服务异常使用有限显式重试；补译阶段禁用嵌套重试。翻译缓存禁用以防不同服务共用结果，重复运行可能再次计费。
+
+## 取消与部分失败
+
+`cancel()` 写入标记；worker 独立监测，进度回调和请求边界也检查取消，阻止新请求。正在处理的网络请求无法保证即时停止，已发送请求仍可能收费。用户取消不发布结果。
+
+疑似漏译、检查／补译异常或部分提供商请求失败时，继续尝试排版可用段落。生成并校验通过的 PDF 返回 `completion: "partial"` 和安全 `warning`；映射异常提供不可高亮的降级映射。完整 API 失败、初始翻译／排版致命错误和主动取消不伪装为成功。
+
+`translation_untranslated` 表示检测到疑似漏译或补译仍未通过，`translation_incomplete` 表示空／截断输出，`translation_quality_failed` 表示检查／补译内部异常。这些分类不暴露正文、提示词或服务端原始错误。
+
+前端对部分结果仍校验固定路径、映射结构及源／译 SHA-256，导入为「部分翻译，需核对」，不设为默认双语对照。已校验 PDF 在映射保存失败时也保留。未生成或校验失败的 PDF 不保证有可打开的译文。
+
+失败／部分完成保留 `babeldoc-*`、`output-*` 工作目录；完整成功清理中间目录，清理失败不覆盖原结果。重新开始只替换任务记录，不删除已有产物。失败和取消记录的删除不涉及这些目录或附件。
+
+## 映射边界
+
+只有 IL 身份、结构及双侧实际 PDF 位置均可核验时才生成 `aligned` 几何。当前适配器包含字符级位置检查、唯一文本回退和唯一栅格匹配；歧义位置为 `uncertain`，不用于高亮。BabelDOC debug IL 不是稳定的跨版本对齐契约，当前映射不保证任意跨页重排、扫描件或复杂版式。
+
+详细协议和坐标见[原生阅读器架构](../docs/native-reader-architecture.md)。
+
+## 开发测试
+
+在仓库根目录执行：
 
 ```sh
-uv run --project "<Zotero profile>/paralens/backend" --no-sync --offline python scripts/offline-translation-smoke.py
+npm run test:babeldoc
+uv run --project backend --no-sync --offline python -m unittest discover -s backend/tests -v
+uv run --project backend --no-sync --offline python scripts/offline-translation-smoke.py
 ```
 
-脚本生成单页英文 PDF、使用确定性的本地替身译文，并输出一页译文 PDF、PNG 预览与段落映射摘要到 `.scaffold/offline-effect/`。这不是用户配置的提供商/API 质量测试；首次运行时 BabelDOC 自有资源仍可能联网下载。本地 API 脚本支持 `--two-paragraphs --repeat 2`：断言两条独立段落映射在原文/译文中不重叠，两次作业都发起新请求，并用 Zotero PDF.js 验证两条中文译文。如本机已安装 Zotero，可在上面的命令末尾追加 `--zotero-omni "C:\Program Files\Zotero\app\omni.ja"`，用 Zotero 内置 PDF.js 验证译文的文本层。中文在试验 PDF 中可视。早期本地替身译文的字体曾使 PyMuPDF `get_text()` 返回替换字符；真实两页试译的译文已用 PyMuPDF 和 Zotero Reader 文本层检查为中文，渲染预览可视，仍未覆盖实际 Zotero GUI 中的复制/搜索行为及跨版本悬停。
-同样可用 `scripts/local-api-translation-smoke.py --repeat 2 --zotero-omni "C:\Program Files\Zotero\app\omni.ja"` 测试实际 OpenAI SDK→本机临时 API→BabelDOC→译文 PDF→Zotero PDF.js 文本层的调用链。它只用 `127.0.0.1` 和虚构密钥，不读取 Zotero 已保存的真实 API Key；成功输出包含请求数量和对齐段落数，不代表真实服务质量或 Zotero GUI 交互已通过。
+离线脚本使用合成 PDF 与确定性的替身译文，不请求用户配置的翻译 API；资源未缓存时 BabelDOC 自身仍可能联网。模拟接口、隔离 GUI、现有产物回放和显式真实测试说明见[后端设置指南](../docs/backend-setup.md)。

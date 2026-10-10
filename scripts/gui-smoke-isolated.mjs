@@ -123,6 +123,13 @@ if (!zotero || !existsSync(zotero))
 if (!existsSync(join(root, "node_modules", "zotero-plugin-scaffold")))
   throw new Error("Run npm install in the repository first");
 
+// Stage generated settings resources and Python sources before copying the addon.
+execFileSync(process.execPath, [join(root, "scripts", "stage-backend.cjs")], {
+  cwd: root,
+  stdio: "inherit",
+  windowsHide: true,
+});
+
 mkdirSync(workspace, { recursive: true });
 const testParent = complexReplay || realComplex ? tmpdir() : workspace;
 const isolated = join(

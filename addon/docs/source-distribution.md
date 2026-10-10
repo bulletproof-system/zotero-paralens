@@ -1,17 +1,21 @@
 # 源码获取、构建与分发
 
-本项目的许可全文见 [LICENSE](../LICENSE)，第三方材料见
-[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。以下是工程分发说明，
+本项目的许可全文位于仓库根目录 `LICENSE`（XPI 中为 `LICENSE.txt`），第三方材料见
+仓库根目录 `THIRD_PARTY_NOTICES.md`（XPI 中为 `content/licenses/THIRD_PARTY_NOTICES.md`）。以下是工程分发说明，
 不代表对所有依赖、模型或字体的全面法律合规认证。
+
+第三方声明只有根目录源文件由 Git 跟踪。`scripts/stage-licenses.cjs` 在构建前生成
+设置页所需副本，生成文件由 Git 忽略；XPI 只包含这一份声明，不在根目录另放副本。
+修改声明时只编辑根目录源文件，构建校验副本内容与源文件一致。
 
 ## 对应版本的源码
 
-正式 Release 应同时提供：
+Release 工作流配置的分发材料包括：
 
 - `zotero-paralens.xpi`；
 - `zotero-paralens-<版本>-source.tar.gz`：发布标签对应的 Git 跟踪文件；
-- 同名 `.sha256`：源码附件的校验值；
-- 同名 `.json`：版本、标签及提交哈希。
+- `zotero-paralens-<版本>-source.tar.gz.sha256`：源码附件的校验值；
+- `zotero-paralens-<版本>-source.json`：版本、标签及提交哈希。
 
 源码附件保留 TypeScript/Python 源码、资源、构建与安装脚本、npm 锁文件、
 许可文本和本说明，而不是只提供编译后的 JavaScript。它不包含本机 `.env`、
@@ -26,8 +30,8 @@ Release 工作流在插件发布成功后，通过 `git archive` 生成同一标
 分发前确保源码入口实际可访问，或为收件人提供等效的源码获取方式。
 不要只给出 main 分支链接，也不要在已发布后移动标签。
 
-本次新增的分发规则不追溯修改旧版 XPI 或旧 Release。旧附件缺失的材料必须
-另行补发或通过包含修复的新版本处理；本地修改不会自动改变远端附件。
+本地源码和文档修改不会自动改变远端 Release 或已分发的 XPI。每个分发版本
+都需核对实际附件及对应源码；材料缺失的版本需提供完整材料。
 
 ## 构建插件
 
@@ -42,10 +46,10 @@ npm run build
 npm run verify:licenses
 ```
 
-建议使用 Node.js 24（现有 CI 使用的主版本）及兼容的 npm。
+构建要求 Node.js 22.13 或更高版本及兼容的 npm，版本约束见 `package.json`。
 产物位于 `.scaffold/build/zotero-paralens.xpi`。
 在 Zotero 插件管理器中选择“从文件安装插件”，安装该文件。
-目前构建包含时间戳；本说明不保证字节级可重复构建。
+构建包含时间戳；本说明不保证字节级可重复构建。
 
 开发者本地未提交的构建不一定等同于包内版本链接指向的已发布源码；
 正式分发必须从干净的发布标签构建。

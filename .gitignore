@@ -39,3 +39,6 @@ key4.db*
 cert9.db*
 zotero.sqlite*
 paralens-jobs/
+
+# Generated third-party notice; edit the repository-root source only
+/addon/content/licenses/THIRD_PARTY_NOTICES.md

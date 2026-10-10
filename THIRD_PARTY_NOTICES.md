@@ -1,6 +1,6 @@
 # Third-party notices / 第三方许可声明
 
-ParaLens is licensed under **AGPL-3.0-or-later**; see [LICENSE](LICENSE).
+ParaLens is licensed under **AGPL-3.0-or-later**; see `LICENSE` at the repository root or `LICENSE.txt` at the XPI root.
 Copyright: ltt and ParaLens contributors; upstream authors retain their own rights.
 This project is based on Zotero Plugin Template and retains its AGPL licensing.
 Third-party software remains subject to its own license; this document does not
@@ -13,7 +13,7 @@ relicense it or certify the entire dependency chain.
 - Upstream: https://github.com/windingwind/zotero-plugin-toolkit
 - License: **MIT**.
 - Copyright and full permission notice:
-  [licenses/zotero-plugin-toolkit-LICENSE.txt](licenses/zotero-plugin-toolkit-LICENSE.txt).
+  `licenses/zotero-plugin-toolkit-LICENSE.txt` at the repository or XPI root.
 - JavaScript from this library is bundled into the plugin. The source dependency
   version is recorded in `package-lock.json`. Build staging copies the installed
   library's unmodified LICENSE and records its actual version in
@@ -35,7 +35,7 @@ ParaLens files are covered by the project's AGPL license.
 - Upstream metadata declares **AGPL-3.0**; do not reinterpret it as an
   unrestricted MIT license or add an upstream `-or-later` grant.
 - Exact upstream license snapshot:
-  [licenses/BabelDOC-0.6.4-LICENSE.txt](licenses/BabelDOC-0.6.4-LICENSE.txt).
+  `licenses/BabelDOC-0.6.4-LICENSE.txt` at the repository or XPI root.
 - ParaLens imports BabelDOC in a local Python worker. It does not include a
   BabelDOC wheel, source tree, virtual environment, model or font in the XPI.
   Clicking Install runs `uv sync`; no installation happens merely on startup.
@@ -74,5 +74,6 @@ Zotero or replace its license.
 
 ParaLens is provided **without warranty**. Recipients may modify and redistribute
 it under the applicable AGPL terms, while preserving upstream rights and notices.
-See [docs/source-distribution.md](docs/source-distribution.md) for obtaining the
-matching source, building, installation and release checks.
+See `docs/source-distribution.md` at the repository or XPI root for obtaining
+the matching source, building, installation and release checks. Local readable
+license copies are also included in `content/licenses/` inside the XPI.

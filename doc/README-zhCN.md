@@ -1,410 +1,185 @@
-# Zotero Plugin Template
+# ParaLens — Zotero PDF 全文翻译与双语对照
 
-[![zotero target version](https://img.shields.io/badge/Zotero-7-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
-[![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)
+[![Zotero](https://img.shields.io/badge/Zotero-10.0.3-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
+[![开发状态](https://img.shields.io/badge/Status-Prototype-orange?style=flat-square)](#已知限制)
+[![使用 Zotero 插件模板](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)
+[![许可证](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=flat-square)](../LICENSE)
 
-这是 [Zotero](https://www.zotero.org/) 的插件模板。
+ParaLens 帮助你在 Zotero 中翻译整篇 PDF，并使用原生阅读器并排阅读原文和译文。悬停或点击段落，即可查看另一侧对应内容的高亮。
 
-[English](../README.md) | [简体中文](./README-zhCN.md) | [Français](./README-frFR.md)
+> [!IMPORTANT]
+> 当前为**技术原型**，已在 Windows / Zotero 10.0.3 的隔离环境中验证。Zotero 7–9 及其他平台尚未完成实机兼容性验收。翻译需要自行配置 API 服务，可能产生费用；译文和段落对应关系仍需人工核对。
 
-- 开发指南
-  - [📖 插件开发文档](https://zotero-chinese.com/plugin-dev-guide/) (中文版，尚不完善)
-  - [📖 Zotero 7 插件开发文档](https://www.zotero.org/support/dev/zotero_7_for_developers)
-- 开发工具参考
-  - [🛠️ Zotero 插件工具包](https://github.com/windingwind/zotero-plugin-toolkit) | [API 文档](https://github.com/windingwind/zotero-plugin-toolkit/blob/master/docs/zotero-plugin-toolkit.md)
-  - [🛠️ Zotero 插件开发脚手架](https://github.com/northword/zotero-plugin-scaffold)
-  - [📜 Zotero 源代码](https://github.com/zotero/zotero)
-  - [ℹ️ Zotero 类型定义](https://github.com/windingwind/zotero-types)
-  - [📌 Zotero 插件模板](https://github.com/windingwind/zotero-plugin-template) (即本仓库)
+## 主要功能
 
-> [!tip]
-> 👁 Watch 本仓库，以及时收到修复或更新的通知。
+- **PDF 全文翻译**：通过本机 BabelDOC 后端解析、翻译和排版，将译文作为新的 Zotero 附件导入，保留原文附件。
+- **原生双语阅读**：原文与译文使用两个原生阅读器窗口，自动左右并排，无须切换到自建阅读器。
+- **双向悬停与锁定**：悬停定位对应内容，点击锁定高亮；再次点击、按 `Esc` 或使用阅读器按钮解锁。
+- **图片区域对照**：支持通过实际字符核验的图内短文本，以及源／译 PDF 中可唯一匹配的栅格图片区域；文字优先于整图命中。
+- **批量任务队列**：多选 PDF 后统一确认费用、依次翻译；可查看进度、取消任务、重新开始，以及删除已失败或已取消的历史记录。
+- **可选同步滚动**：默认关闭，可在阅读器浮动控件中开启；优先按可信映射定位，无映射区域使用页面比例作为近似定位。
+- **映射附件同步**：对照映射保存为 JSON 存储附件，可与原文、译文一起通过 Zotero 的正常文件同步迁移到其他设备。
+- **并发与限流配置**：可分别设置单份 PDF 的翻译并发数和每秒请求上限；不同 PDF 作业仍逐个处理。
 
-## 使用此模板构建的插件
+## 安装
 
-[![GitHub Repo stars](https://img.shields.io/github/stars/windingwind/zotero-better-notes?label=zotero-better-notes&style=flat-square)](https://github.com/windingwind/zotero-better-notes)
-[![GitHub Repo stars](https://img.shields.io/github/stars/windingwind/zotero-pdf-preview?label=zotero-pdf-preview&style=flat-square)](https://github.com/windingwind/zotero-pdf-preview)
-[![GitHub Repo stars](https://img.shields.io/github/stars/windingwind/zotero-pdf-translate?label=zotero-pdf-translate&style=flat-square)](https://github.com/windingwind/zotero-pdf-translate)
-[![GitHub Repo stars](https://img.shields.io/github/stars/windingwind/zotero-tag?label=zotero-tag&style=flat-square)](https://github.com/windingwind/zotero-tag)
-[![GitHub Repo stars](https://img.shields.io/github/stars/iShareStuff/ZoteroTheme?label=zotero-theme&style=flat-square)](https://github.com/iShareStuff/ZoteroTheme)
-[![GitHub Repo stars](https://img.shields.io/github/stars/MuiseDestiny/zotero-reference?label=zotero-reference&style=flat-square)](https://github.com/MuiseDestiny/zotero-reference)
-[![GitHub Repo stars](https://img.shields.io/github/stars/MuiseDestiny/zotero-citation?label=zotero-citation&style=flat-square)](https://github.com/MuiseDestiny/zotero-citation)
-[![GitHub Repo stars](https://img.shields.io/github/stars/MuiseDestiny/ZoteroStyle?label=zotero-style&style=flat-square)](https://github.com/MuiseDestiny/ZoteroStyle)
-[![GitHub Repo stars](https://img.shields.io/github/stars/volatile-static/Chartero?label=Chartero&style=flat-square)](https://github.com/volatile-static/Chartero)
-[![GitHub Repo stars](https://img.shields.io/github/stars/l0o0/tara?label=tara&style=flat-square)](https://github.com/l0o0/tara)
-[![GitHub Repo stars](https://img.shields.io/github/stars/redleafnew/delitemwithatt?label=delitemwithatt&style=flat-square)](https://github.com/redleafnew/delitemwithatt)
-[![GitHub Repo stars](https://img.shields.io/github/stars/redleafnew/zotero-updateifsE?label=zotero-updateifsE&style=flat-square)](https://github.com/redleafnew/zotero-updateifsE)
-[![GitHub Repo stars](https://img.shields.io/github/stars/northword/zotero-format-metadata?label=zotero-format-metadata&style=flat-square)](https://github.com/northword/zotero-format-metadata)
-[![GitHub Repo stars](https://img.shields.io/github/stars/inciteful-xyz/inciteful-zotero-plugin?label=inciteful-zotero-plugin&style=flat-square)](https://github.com/inciteful-xyz/inciteful-zotero-plugin)
-[![GitHub Repo stars](https://img.shields.io/github/stars/MuiseDestiny/zotero-gpt?label=zotero-gpt&style=flat-square)](https://github.com/MuiseDestiny/zotero-gpt)
-[![GitHub Repo stars](https://img.shields.io/github/stars/zoushucai/zotero-journalabbr?label=zotero-journalabbr&style=flat-square)](https://github.com/zoushucai/zotero-journalabbr)
-[![GitHub Repo stars](https://img.shields.io/github/stars/MuiseDestiny/zotero-figure?label=zotero-figure&style=flat-square)](https://github.com/MuiseDestiny/zotero-figure)
-[![GitHub Repo stars](https://img.shields.io/github/stars/l0o0/jasminum?label=jasminum&style=flat-square)](https://github.com/l0o0/jasminum)
-[![GitHub Repo stars](https://img.shields.io/github/stars/lifan0127/ai-research-assistant?label=ai-research-assistant&style=flat-square)](https://github.com/lifan0127/ai-research-assistant)
-[![GitHub Repo stars](https://img.shields.io/github/stars/daeh/zotero-markdb-connect?label=zotero-markdb-connect&style=flat-square)](https://github.com/daeh/zotero-markdb-connect)
+当前以本地构建安装为主。构建需要 Node.js 22.13 或更高版本和 npm；翻译后端另外需要 uv，**仅安装 npm 并不能运行翻译后端**。
 
-如果你正在使用此库，我建议你将这个标志 ([![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)) 放在 README 文件中：
+### 1. 构建插件
 
-```md
-[![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)
+在项目目录运行：
+
+```bash
+npm install
+npm run build
 ```
 
-## Features 特性
+构建成功后，安装包位于：
 
-- 事件驱动、函数式编程的可扩展框架；
-- 简单易用，开箱即用；
-- `src/modules/examples.ts` 中有丰富的示例，涵盖了插件中常用的大部分 API (使用 [zotero-plugin-toolkit](https://github.com/windingwind/zotero-plugin-toolkit)；
-- TypeScript 支持：
-  - 为使用 JavaScript 编写的 Zotero 源码提供全面的类型定义支持 (使用 [zotero-types](https://github.com/windingwind/zotero-types))；
-  - 全局变量和环境设置；
-- 插件开发/构建/发布工作流：
-  - ⭐自动热重载！每当修改源码时，都会自动编译并重新加载插件；
-  - 自动生成/更新插件版本、更新配置和设置环境变量 (`development`/`production`)；
-  - 自动发布到 GitHub ;
-- 集成 Prettier 和 ES Lint;
-
-## Examples 示例
-
-此库提供了 [zotero-plugin-toolkit](https://github.com/windingwind/zotero-plugin-toolkit) 中 API 的示例。
-
-在 `src/examples.ts` 中搜索`@example` 查看示例。这些示例在 `src/hooks.ts` 中调用演示。
-
-### 基本示例 (Basic Examples)
-
-- registerNotifier
-- registerPrefs, unregisterPrefs
-
-### 快捷键示例 (Shortcut Keys Examples)
-
-- registerShortcuts
-- exampleShortcutLargerCallback
-- exampleShortcutSmallerCallback
-- exampleShortcutConflictionCallback
-
-### UI 示例 (UI Examples)
-
-![image](https://user-images.githubusercontent.com/33902321/211739774-cc5c2df8-5fd9-42f0-9cdf-0f2e5946d427.png)
-
-- registerStyleSheet(the official make-it-red example)
-- registerRightClickMenuItem
-- registerRightClickMenuPopup
-- registerWindowMenuWithSeprator
-- registerExtraColumn
-- registerExtraColumnWithCustomCell
-- registerCustomItemBoxRow
-- registerLibraryTabPanel
-- registerReaderTabPanel
-
-### 首选项面板示例 (Preference Pane Examples)
-
-![image](https://user-images.githubusercontent.com/33902321/211737987-cd7c5c87-9177-4159-b975-dc67690d0490.png)
-
-- Preferences bindings
-- UI Events
-- Table
-- Locale
-
-详情参见 [`src/modules/preferenceScript.ts`](./src/modules/preferenceScript.ts)
-
-### 帮助示例 (HelperExamples)
-
-![image](https://user-images.githubusercontent.com/33902321/215119473-e7d0d0ef-6d96-437e-b989-4805ffcde6cf.png)
-
-- dialogExample
-- clipboardExample
-- filePickerExample
-- progressWindowExample
-- vtableExample(See Preference Pane Examples)
-
-### 指令行示例 (PromptExamples)
-
-Obsidian 风格的指令输入模块，它通过接受文本来运行插件，并在弹出窗口中显示可选项。
-
-使用 `Shift+P` 激活。
-
-![image](https://user-images.githubusercontent.com/33902321/215120009-e7c7ed27-33a0-44fe-b021-06c272481a92.png)
-
-- registerAlertPromptExample
-
-## 快速上手
-
-### 0 环境要求
-
-1. 安装 [beta 版 Zotero](https://www.zotero.org/support/beta_builds)
-2. 安装 [Node.js 最新 LTS 版本](https://nodejs.org/zh-cn/download) 和 [Git](https://git-scm.com/)
-
-> [!note]
-> 本指南假定你已经对 Zotero 插件的基本结构和工作原理有初步的了解。如果你还不了解，请先参考[官方文档](https://www.zotero.org/support/dev/zotero_7_for_developers) 和[官方插件样例 Make It Red](https://github.com/zotero/make-it-red)。
-
-### 1 创建你的仓库 (Create Your Repo)
-
-1. 点击 `Use this template`；
-2. 使用 `git clone` 克隆上一步生成的仓库；
-   <details >
-   <summary>💡 从 GitHub Codespace 开始</summary>
-
-   _GitHub CodeSpace_ 使你可以直接开始开发而无需在本地下载代码/IDE/依赖。
-
-   重复下列步骤，仅需三十秒即可开始构建你的第一个插件！
-   - 点击首页 `Use this template` 按钮，随后点击 `Open in codespace`，你需要登录你的 GitHub 账号。
-   - 等待 codespace 加载。
-
-   </details>
-
-3. 进入项目文件夹；
-
-### 2 配置模板和开发环境 (Config Template Settings and Enviroment)
-
-1. 修改 `./package.json` 中的设置，包括：
-
-   ```jsonc
-   {
-     "version": "", // 修改为 0.0.0
-     "description": "",
-     "config": {
-       "addonName": "", // 插件名称
-       "addonID": "", // 插件 ID【重要：防止冲突】
-       "addonRef": "", // 插件命名空间：元素前缀等
-       "addonInstance": "", // 注册在 Zotero 根下的实例名
-       "prefsPrefix": "extensions.zotero.${addonRef}", // 首选项的前缀
-     },
-     "repository": {
-       "type": "git",
-       "url": "git+https://github.com/your-github-name/repo-name.git",
-     },
-     "author": "Your Name",
-     "bugs": {
-       "url": "https://github.com/your-github-name/repo-name/issues",
-     },
-     "homepage": "https://github.com/your-github-name/repo-name#readme",
-   }
-   ```
-
-   > [!warning]
-   > 注意设置 addonID 和 addonRef 以避免冲突。
-
-   如果你需要在 GitHub 以外的地方托管你的 XPI 包，请修改 `zotero-plugin.config.ts` 中的 `updateURL` 和 `xpiDownloadLink`。
-
-2. 复制 Zotero 启动配置，填入 Zotero 可执行文件路径和 profile 路径。
-
-   > (可选项) 创建开发用 profile 目录：
-   >
-   > 此操作仅需执行一次：使用 `/path/to/zotero -p` 启动 Zotero，创建一个新的配置文件并用作开发配置文件。
-
-   ```sh
-   cp .env.example .env
-   vim .env
-   ```
-
-   如果你维护了多个插件，可以将这些内容存入系统环境变量，以避免在每个插件中都需要重复设置。
-
-3. 运行 `npm install` 以安装相关依赖
-
-   > 如果你使用 `pnpm` 作为包管理器，你需要添加 `public-hoist-pattern[]=*@types/bluebird*` 到`.npmrc`, 详情请查看 [zotero-types](https://github.com/windingwind/zotero-types?tab=readme-ov-file#usage) 的文档。
-
-   如果你使用 `npm install` 的过程中遇到了 `npm ERR! ERESOLVE unable to resolve dependency tree` ，这是由于上游依赖 typescript-eslint 导致的错误，请使用 `npm i -f` 命令进行安装。
-
-### 3 开发插件
-
-使用 `npm start` 启动开发服务器，它将：
-
-- 在开发模式下预构建插件
-- 启动 Zotero，并让其从 `build/` 中加载插件
-- 打开开发者工具（devtool）
-- 监听 `src/**` 和 `addon/**`，当文件发生修改时，重新构建插件并且重新加载
-
-#### 自动热重载
-
-厌倦了无休止的重启吗？忘掉它，拥抱热加载！
-
-1. 运行 `npm start`.
-2. 编码。(是的，就这么简单)
-
-当检测到 `src` 或 `addon` 中的文件修改时，插件将自动编译并重新加载。
-
-<details style="text-indent: 2em">
-<summary>💡 将此功能添加到现有插件的步骤</summary>
-
-请参阅：[zotero-plugin-scaffold](https://github.com/northword/zotero-plugin-scaffold)。
-
-</details>
-
-#### 调试代码
-
-你还可以：
-
-- 在 Tools->Developer->Run Javascript 中测试代码片段;
-
-- 使用 `Zotero.debug()` 调试输出。在 Help->Debug Output Logging->View Output 查看输出;
-
-- 调试 UI. Zotero 建立在 Firefox XUL 框架之上。使用 [XUL Explorer](https://udn.realityripple.com/docs/Archive/Mozilla/XUL_Explorer) 等软件调试 XUL UI.
-
-  > XUL 文档：<http://www.devdoc.net/web/developer.mozilla.org/en-US/docs/XUL.html>
-
-### 4 构建插件
-
-运行 `npm run build` 在生产模式下构建插件，构建的结果位于 `.scaffold/build/` 目录中。
-
-构建步骤文档可参阅 [zotero-plugin-scaffold](https://northword.github.io/zotero-plugin-scaffold/build.html)简单来说，可以分为以下几步：
-
-- 创建/清空 `build/`
-- 复制 `addon/**` 到 `.scaffold/build/addon/**`
-- 替换占位符：替换在 `package.json` 中定义的关键字和配置
-- 准备本地化文件以避免冲突，查看 [zotero_7_for_developers](https://www.zotero.org/support/dev/zotero_7_for_developers#avoiding_localization_conflicts) 了解更多
-  - 重命名`**/*.flt` 为 `**/${addonRef}-*.flt`
-  - 在每个消息前加上 `addonRef-`
-  - 为 FTL 消息生成类型声明文件
-- 准备首选项文件，在首选项键前添加前缀 `package.json#prefsPrefix`，并为首选项生成类型声明文件
-- 使用 ESBuild 来将 `.ts` 源码构建为 `.js`，从 `src/index.ts` 构建到`.scaffold/build/addon/content/scripts`
-- (仅在生产模式下工作) 压缩 `.scaffold/build/addon` 目录为 `.scaffold/build/*.xpi`
-- (仅在生产模式下工作) 准备 `update.json` 或 `update-beta.json`
-
-> [!note]
->
-> **Dev & prod 两者有什么区别？**
->
-> - 此环境变量存储在 `Zotero.${addonInstance}.data.env` 中，控制台输出在生产模式下被禁用。
-> - 你可以根据此变量决定用户无法查看/使用的内容。
-> - 在生产模式下，构建脚本将自动打包插件并更新 `update.json`.
-
-### 5 发布
-
-如果要构建和发布插件，运行如下指令：
-
-```shell
-# version increase, git add, commit and push
-# then on ci, npm run build, and release to GitHub
-npm run release
+```text
+.scaffold/build/zotero-paralens.xpi
 ```
 
-> [!note]
-> 在此模板中，发布流程被配置为在本地更新版本号、提交并推送标签，随后 GitHub Action 将重新构建插件并将 XPI 发布到 GitHub Release。
+### 2. 在 Zotero 中安装
 
-#### 关于预发布
+1. 打开 Zotero 的插件管理器。
+2. 点击齿轮菜单，选择「从文件安装插件…」。
+3. 选择构建生成的 `zotero-paralens.xpi`。
+4. 按 Zotero 提示完成安装并重启。
 
-该模板将 `prerelease` 定义为插件的测试版，当你在版本选择中选择 `prerelease` 版本 (版本号中带有 `-` )，构建脚本将创建一个 `update-beta.json` 给预发布版本使用，这将确保常规版本的用户不会自动更新到测试版，只有手动下载并安装了测试版的用户才能自动更新到下一个测试版。当下一个正式版本更新时，脚本将同步更新 `update.json` 和 `update-beta.json`，这将使正式版和测试版用户都可以更新到最新的正式版。
+> 仓库和插件标识配置见 `package.json`，安装包名及更新 URL 模板见 `zotero-plugin.config.ts`。更新链接是否可用取决于对应 Release 资源，开发构建不等同于正式发布。
 
-> [!warning]
-> 严格来说，区分 Zotero 6 和 Zotero 7 兼容的插件版本应该通过 `update.json` 的 `addons.__addonID__.updates[]` 中分别配置 `applications.zotero.strict_min_version`，这样 Zotero 才能正确识别，详情请参阅 [Zotero 7 开发文档](https://www.zotero.org/support/dev/zotero_7_for_developers#updaterdf_updatesjson)。
+## 使用说明
 
-## Details 更多细节
+### 配置
 
-### 关于 Hooks(About Hooks)
+1. 打开 Zotero 设置中的 **ParaLens** 页面。
+2. 检测本机 uv；若未安装，请先按照 [uv 官方安装说明](https://docs.astral.sh/uv/getting-started/installation/) 安装。自动检测失败时，可填写 uv 可执行文件的绝对路径后重新检测。
+3. 选择翻译后端。**目前只有 BabelDOC 可用**；后端尚未安装时，点击「安装后端」。首次安装需要下载 Python 环境和依赖，首次翻译还可能下载布局模型等资源。
+4. 选择 API 提供商，填写 API Key 和该账户可用的模型 ID。
+5. 使用自定义接口时，填写 HTTPS 的 API Base URL。接口需兼容 Chat Completions；不要把完整的请求地址当作 Base URL。本机回环服务可使用 HTTP。
+6. 选择原文和译文语言，按需调整性能参数，然后保存。
 
-> 可以在 [`src/hooks.ts`](https://github.com/windingwind/zotero-plugin-template/blob/main/src/hooks.ts) 中查看更多。
+| 设置项               | 说明                                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| 后端                 | 当前支持 BabelDOC 0.6.4                                                                      |
+| API 提供商           | 提供 OpenAI、OpenRouter、DeepSeek 和自定义兼容接口配置入口；模型是否可用取决于服务与账户权限 |
+| API Key              | 保存在 Zotero 的凭据管理器中，不写入普通插件偏好设置                                         |
+| 模型                 | 填写所选服务支持、且账户有权限调用的模型 ID                                                  |
+| 自定义 Base URL      | 填写接口基础地址，而非带有密钥、查询参数或完整请求路径的地址                                 |
+| 翻译语言             | 当前提供英文与简体中文选项，原文与译文语言不能相同                                           |
+| 翻译并发数           | 默认 **4**，可设置 **1–16**；作用于单份 PDF 内的 API 请求                                    |
+| 每秒请求上限         | 默认 **2**，可设置 **1–10**；正文、补译和重试共享请求上限                                    |
+| 自动补译疑似漏译段落 | 默认**关闭**：只检查漏译，不发起额外补译请求；开启后可能增加 API 费用，只影响新入队任务      |
 
-1. 当在 Zotero 中触发安装/启用/启动时，`bootstrap.js` > `startup` 被调用
-   - 等待 Zotero 就绪
-   - 加载 `index.js` (插件代码的主入口，从 `index.ts` 中构建)
-   - 如果是 Zotero 7 以上的版本则注册资源
-2. 主入口 `index.js` 中，插件对象被注入到 `Zotero` ，并且 `hooks.ts` > `onStartup` 被调用。
-   - 初始化插件需要的资源，包括通知监听器、首选项面板和 UI 元素。
-3. 当在 Zotero 中触发卸载/禁用时，`bootstrap.js` > `shutdown` 被调用。
-   - `events.ts` > `onShutdown` 被调用。移除 UI 元素、首选项面板或插件创建的任何内容。
-   - 移除脚本并释放资源。
+> [!NOTE]
+> 性能参数在任务入队时保存，只影响新入队任务。遇到限流或配额不足时，请降低并发数和请求上限。并发并不代表固定倍速，模型响应、PDF 解析、排版和映射生成都会影响耗时。
 
-### 关于全局变量 (About Global Variables)
+### 翻译 PDF
 
-> 可以在 [`src/index.ts`](https://github.com/windingwind/zotero-plugin-template/blob/main/src/index.ts)中查看更多
+1. 在 Zotero 中选择 PDF 附件，或仅含一个 PDF 附件的文献条目。
+2. 右键选择 **「ParaLens：翻译 PDF」**。
+3. 确认可能产生的 API 费用，将任务加入队列。
+4. 翻译完成后，插件导入译文和映射附件，并打开双语阅读窗口。
 
-bootstrap 插件在沙盒中运行，但沙盒中没有默认的全局变量，例如 `Zotero` 或 `window` 等我们曾在 overlay 插件环境中使用的变量。
+多选 PDF 可批量入队。文献条目存在多个 PDF 时，请明确选择要翻译的附件。
 
-此模板将以下变量注册到全局范围：
+### 双语阅读
 
-```plain
-Zotero, ZoteroPane, Zotero_Tabs, window, document, rootURI, ztoolkit, addon;
+- **悬停**：在任意一侧的可信映射区域悬停，另一侧高亮对应内容并定位。
+- **锁定**：点击锁定高亮，移开指针后仍保留；再次点击、按 `Esc` 或点击解锁按钮取消锁定。
+- **同步滚动**：通过阅读器浮动控件开启或关闭，默认关闭。
+- **再次打开**：选中原文 PDF，右键选择 **「ParaLens：打开双语对照」**。
+
+在其他设备阅读时，请先同步并下载**原文 PDF、译文 PDF 和映射 JSON 附件**，缺少其中任意一项都可能无法打开完整对照。
+
+### 管理任务
+
+右键选择 **「ParaLens：翻译任务队列」**，查看状态、进度和错误提示。
+
+- 可取消排队任务，也可取消正在翻译的任务。
+- 已失败或已取消的记录可点击「删除任务」移除；只删除队列记录，不会删除 PDF、映射附件或本机作业产物，也不会调用 API。
+- 已结束或中断的任务可按界面提示重新开始；旧任务记录会被新任务替换，不会留下两条记录。该操作会从头翻译，可能再次计费，但不会删除已有译文附件或本机作业产物。
+- 默认只检查疑似漏译，不自动补译，也不为此发起额外 API 请求；发现疑似漏译时继续尝试排版并保留部分译文。该检查是启发式检测，不保证语义正确性。
+- 如需自动补译，可在设置中手动开启，只影响之后新入队的任务；重新开始沿用原任务选项。开启后显示当前段落与尝试次数，每段最多尝试两次，补译 API 请求设置 60 秒超时；遇到 API 故障不进行长时间循环重试。已完成的译文不会被不合格的补译结果覆盖。
+- 部分段落翻译失败、漏译检查／补译异常或段落映射失败时，只要能生成并通过校验的 PDF，就会保留为译文附件，任务显示「部分完成（译文已保留）」。可点击「打开保留译文」阅读并人工核对；不会覆盖已有默认双语对照。
+- 若失败发生在 PDF 生成之前，则只能保留已生成的中间产物，不能保证有可打开的译文。损坏或校验失败的文件不会作为译文附件导入。
+- 重启 Zotero 后，未完成任务不会自动继续发起计费请求。
+
+> [!WARNING]
+> 取消不能撤回已发送的 API 请求，当前请求仍可能计费。请勿将「取消任务」理解为服务端已停止处理或费用已经退回。
+
+## 隐私与数据处理
+
+- **本机处理不等于文本不出设备**：PDF 解析和排版在本机进行，待译文本会发送到你配置的 API 服务。翻译含敏感信息或未公开内容的文档前，请确认有权使用该服务，并了解其数据处理规则。
+- **凭据与临时配置**：API Key 由 Zotero 凭据管理器保存。启动作业时会写入一次性临时配置，worker 读取后删除；不会作为映射附件同步，也不应提交到 Git。
+- **同步范围**：译文和映射作为 Zotero 存储附件保存。启用文件同步后，附件会按你的 Zotero 同步配置上传到相应存储；映射包含文件摘要和几何信息，请将其视为文档相关数据。
+- **作业产物保留**：失败或部分完成作业的工作文件与输出保留在 Zotero profile 的 `paralens-jobs/job-*` 目录中，重新开始不会自动清理。这些文件可能包含原文、译文和段落文本，请勿直接公开；长期使用会增加磁盘占用，确认附件已保留后可在没有正在运行的任务时清理对应作业目录。
+- **测试数据**：仓库仅保留合成 PDF、合成映射及测试代码。真实文档、凭据副本、测试日志和诊断产物不应进入版本控制。
+- **反馈前脱敏**：不要在 Issue、截图或日志中暴露 API Key、真实接口凭据、个人路径、未公开文档正文，以及 Zotero 数据库或凭据文件。优先提供可公开的最小合成样本。
+- **发布前检查历史**：`.gitignore` 不会删除已提交内容；Git 作者邮箱等元数据也会随历史公开。建议使用 GitHub 提供的 noreply 邮箱。发现真实密钥泄漏时，需先撤销／轮换密钥，再处理历史记录。
+
+## 已知限制
+
+- 尚不支持 OCR；扫描件或没有可用文本层的 PDF 不属于当前完整支持范围。
+- 当前使用段落级映射，不提供句子级对齐。
+- 图片高亮只覆盖可核验的文字和可唯一匹配的栅格区域；重复图片、内容改变的栅格、未匹配矢量图及歧义位置不强行配对。
+- 高亮成功不等于译文语义正确；专业术语、公式、参考文献和复杂版式仍需人工核对。
+- 旧译文和旧映射不会自动升级；重新翻译会生成新版映射，单独重建映射不能修复译文内容。
+- 不提供断点续译；重新开始任务会从头处理。
+- 原生阅读器适配使用了 Zotero / PDF.js 的内部接口，其他版本和平台仍需分别验证。
+
+## 开发与验证
+
+常规构建和单元测试（Python 命令要求已显式安装后端依赖）：
+
+```bash
+npm run build
+npm run test:unit
+uv run --project backend --no-sync --offline python -m unittest discover -s backend/tests -v
 ```
 
-### 创建元素 API(Create Elements API)
+GUI 验证使用专用隔离环境。将 `PARALENS_TEST_VENV` 指向已安装 BabelDOC 的 `.venv` 后运行：
 
-插件模板为 bootstrap 插件提供了一些新的 API. 我们有两个原因使用这些 API，而不是使用 `createElement/createElementNS`：
-
-- 在 bootstrap 模式下，插件必须在推出（禁用或卸载）时清理所有 UI 元素，这非常麻烦。使用 `createElement`，插件模板将维护这些元素。仅仅在退出时 `unregisterAll` .
-- Zotero 7 需要 createElement()/createElementNS() → createXULElement() 来表示其他的 XUL 元素，而 Zotero 6 并不支持 `createXULElement`. 类似于 React.createElement 的 API `createElement` 检测 namespace(xul/html/svg) 并且自动创建元素，返回元素为对应的 TypeScript 元素类型。
-
-```ts
-createElement(document, "div"); // returns HTMLDivElement
-createElement(document, "hbox"); // returns XUL.Box
-createElement(document, "button", { namespace: "xul" }); // manually set namespace. returns XUL.Button
+```bash
+npm run test:gui:isolated
 ```
 
-### 关于 Zotero API(About Zotero API)
+默认隔离 GUI 测试使用本机模拟 API，不读取现有 Zotero profile 的密钥；真实 API 验收需显式启用、提供授权配置，并承担可能产生的费用。
 
-Zotero 文档已过时且不完整，克隆 <https://github.com/zotero/zotero> 并全局搜索关键字。
+测试覆盖配置与凭据边界、串行队列、取消／删除／重新开始、漏译检查与可选补译、部分产物保留、映射几何及原生 Reader 交互。测试结果以实际输出为准，不承诺固定耗时、文档覆盖率或真实翻译质量。
 
-> ⭐[zotero-types](https://github.com/windingwind/zotero-types) 提供了最常用的 Zotero API，在默认情况下它被包含在此模板中。你的 IDE 将为大多数的 API 提供提醒。
+项目文档：
 
-猜你需要：查找所需 API 的技巧
+- [后端安装与 API 配置](../docs/backend-setup.md)
+- [项目架构](../docs/project-architecture.md)
+- [原生双语阅读器架构](../docs/native-reader-architecture.md)
+- [兼容性与支持边界](../docs/compatibility.md)
+- [测试样本说明](../fixtures/README.md)
+- [开发指南](../doc/development.md)
+- [文档与注释硬规则](../AGENT.md)
 
-在 `.xhtml`/`.flt` 文件中搜索 UI 标签，然后在 locale 文件中找到对应的键。，然后在 `.js`/`.jsx` 文件中搜索此键。
+## 感谢
 
-### 目录结构 (Directory Structure)
+本项目基于以下开源项目实现：
 
-本部分展示了模板的目录结构。
+- [Zotero Plugin Template](https://github.com/windingwind/zotero-plugin-template)：Zotero 插件模板。
+- [BabelDOC](https://github.com/funstory-ai/BabelDOC)：PDF 翻译与排版后端。
+- [Zotero](https://www.zotero.org)：文献管理与原生 PDF 阅读器。
 
-- 所有的 `.js/.ts` 代码都在 `./src`;
-- 插件配置文件：`./addon/manifest.json`;
-- UI 文件：`./addon/content/*.xhtml`.
-- 区域设置文件：`./addon/locale/**/*.flt`;
-- 首选项文件：`./addon/prefs.js`;
+## 反馈与参与
 
-```shell
-.
-|-- .github/                  # github conf
-|-- .vscode/                  # vscode conf
-|-- addon                     # static files
-|   |-- bootstrap.js
-|   |-- content
-|   |   |-- icons
-|   |   |   |-- favicon.png
-|   |   |   `-- favicon@0.5x.png
-|   |   |-- preferences.xhtml
-|   |   `-- zoteroPane.css
-|   |-- locale
-|   |   |-- en-US
-|   |   |   |-- addon.ftl
-|   |   |   |-- mainWindow.ftl
-|   |   |   `-- preferences.ftl
-|   |   `-- zh-CN
-|   |       |-- addon.ftl
-|   |       |-- mainWindow.ftl
-|   |       `-- preferences.ftl
-|   |-- manifest.json
-|   `-- prefs.js
-|-- build                         # build dir
-|-- node_modules
-|-- src                           # source code of scripts
-|   |-- addon.ts                  # base class
-|   |-- hooks.ts                  # lifecycle hooks
-|   |-- index.ts                  # main entry
-|   |-- modules                   # sub modules
-|   |   |-- examples.ts
-|   |   `-- preferenceScript.ts
-|   `-- utils                 # utilities
-|       |-- locale.ts
-|       |-- prefs.ts
-|       |-- wait.ts
-|       |-- window.ts
-|       `-- ztoolkit.ts
-|-- typings                   # ts typings
-|   `-- global.d.ts
+欢迎通过 [Issues](https://github.com/bulletproof-system/zotero-paralens/issues) 反馈问题或提交改进建议。请提供 Zotero 版本、操作系统、插件版本、错误阶段及可公开的复现步骤，并对文档、凭据和日志进行脱敏。
 
-|-- .env                      # enviroment config (do not check into repo)
-|-- .env.example              # template of enviroment config, https://github.com/northword/zotero-plugin-scaffold
-|-- .gitignore                # git conf
-|-- .gitattributes            # git conf
-|-- .prettierrc               # prettier conf, https://prettier.io/
-|-- eslint.config.mjs         # eslint conf, https://eslint.org/
-|-- LICENSE
-|-- package-lock.json
-|-- package.json
-|-- tsconfig.json             # typescript conf, https://code.visualstudio.com/docs/languages/jsconfig
-|-- README.md
-`-- zotero-plugin.config.ts   # scaffold conf, https://github.com/northword/zotero-plugin-scaffold
-```
+## 许可证与免责声明
 
-## Disclaimer 免责声明
+本项目采用 [AGPL-3.0-or-later](../LICENSE) 许可证，保留原模板及相关开源项目的许可声明。
+第三方权利和分发方式见 [第三方许可声明](../THIRD_PARTY_NOTICES.md)，
+对应版本源码获取与构建方法见 [源码分发说明](../docs/source-distribution.md)。
+XPI 内附完整许可文本；插件设置提供离线许可证查看和版本源码入口。
 
-在 AGPL 下使用此代码。不提供任何保证。遵守你所在地区的法律！
+BabelDOC 0.6.4 由用户明确安装，采用其上游 AGPL 声明；toolkit 的 MIT 许可声明
+随插件保留。Python 间接依赖、模型和字体尚未完成全面授权审查，不应将这些材料
+理解为整个依赖链已经获得无条件使用或再分发许可。
 
-如果你想更改许可，请通过 <wyzlshx@foxmail.com> 与我联系。
+插件按现状提供，不提供任何保证。翻译结果、段落映射、第三方 API 可用性与费用均需自行评估；请保留原文并人工核对重要内容。

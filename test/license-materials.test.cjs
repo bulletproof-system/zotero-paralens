@@ -104,7 +104,7 @@ test("staged license files preserve full texts and actual bundled versions", () 
   );
   for (const [target, source] of [
     ["addon/LICENSE.txt", "LICENSE"],
-    ["addon/THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"],
+    ["addon/content/licenses/THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"],
     [
       "addon/licenses/zotero-plugin-toolkit-LICENSE.txt",
       "licenses/zotero-plugin-toolkit-LICENSE.txt",
@@ -119,6 +119,11 @@ test("staged license files preserve full texts and actual bundled versions", () 
       fs.readFileSync(path.join(root, target)),
       fs.readFileSync(path.join(root, source)),
     );
+  assert.equal(
+    fs.existsSync(path.join(root, "addon/THIRD_PARTY_NOTICES.md")),
+    false,
+    "No redundant XPI-root notice is staged",
+  );
   const metadata = JSON.parse(
     fs.readFileSync(
       path.join(root, "addon/content/licenses/DEPENDENCIES.json"),
@@ -132,6 +137,31 @@ test("staged license files preserve full texts and actual bundled versions", () 
   );
   assert.equal(metadata.installedSeparately[0].version, "0.6.4");
   assert.match(metadata.limitations, /not a complete audited inventory/);
+});
+
+test("third-party notice has one tracked source and one ignored generated settings resource", () => {
+  const tracked = execFileSync(
+    "git",
+    [
+      "ls-files",
+      "--",
+      "THIRD_PARTY_NOTICES.md",
+      "addon/THIRD_PARTY_NOTICES.md",
+      "addon/content/licenses/THIRD_PARTY_NOTICES.md",
+    ],
+    { cwd: root, encoding: "utf8", windowsHide: true },
+  );
+  assert.deepEqual(tracked.trim().split(/\r?\n/), ["THIRD_PARTY_NOTICES.md"]);
+  const ignored = spawnSync(
+    "git",
+    [
+      "check-ignore",
+      "--quiet",
+      "addon/content/licenses/THIRD_PARTY_NOTICES.md",
+    ],
+    { cwd: root, windowsHide: true },
+  );
+  assert.equal(ignored.status, 0);
 });
 
 test("source archive matches its tag, contains legal/build materials and excludes ignored credentials", (t) => {
