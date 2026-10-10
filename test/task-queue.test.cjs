@@ -93,7 +93,8 @@ test("restart converts recovered queued/running work to interrupted and never ch
     recovered.snapshot().map((task) => task.state),
     ["interrupted", "interrupted"],
   );
-  const ids = await recovered.restart(recovered.snapshot()[0].id);
+  const oldId = recovered.snapshot()[0].id;
+  const ids = await recovered.restart(oldId);
   await recovered.waitForIdle();
   assert.equal(calls, 1);
   assert.equal(ids.length, 1);
@@ -101,8 +102,13 @@ test("restart converts recovered queued/running work to interrupted and never ch
   assert.equal(
     recovered.snapshot()[0].state,
     "interrupted",
-    "history remains visible",
+    "The other interrupted task remains visible",
   );
+  assert.equal(
+    recovered.snapshot().some((task) => task.id === oldId),
+    false,
+  );
+  assert.equal(recovered.snapshot().length, 2);
 });
 
 test("queued cancellation skips work; active cancellation and shutdown preserve accurate states", async () => {
@@ -395,4 +401,145 @@ test("performance is snapshotted per job and legacy jobs receive defaults withou
   });
   await assert.rejects(invalid.initialize(), /整数/);
   assert.equal(calls, 0);
+});
+
+test("restart durably replaces the old row, clears stale progress, and suppresses double clicks", async () => {
+  const initial = {
+    ...input("AAAA1111"),
+    id: "failed-old",
+    state: "failed",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    error: "old failure",
+    progress: { stage: "failed", percent: 77 },
+    targetKey: "OLDP1234",
+  };
+  const disk = storage([initial]);
+  let calls = 0;
+  const queue = new TranslationQueue(disk, async () => {
+    calls++;
+  });
+  const [first, second] = await Promise.all([
+    queue.restart(initial.id),
+    queue.restart(initial.id),
+  ]);
+  await queue.waitForIdle();
+  assert.equal(calls, 1);
+  assert.equal(first.length + second.length, 1);
+  assert.equal(queue.snapshot().length, 1);
+  assert.notEqual(queue.snapshot()[0].id, initial.id);
+  assert.equal(queue.snapshot()[0].state, "completed");
+  assert.equal(queue.snapshot()[0].error, undefined);
+  assert.equal(queue.snapshot()[0].targetKey, undefined);
+  assert.equal(
+    disk.value.some((task) => task.id === initial.id),
+    false,
+  );
+});
+
+test("failed restart persistence retains the old row and cannot charge the API", async () => {
+  const initial = {
+    ...input("AAAA1111"),
+    id: "failed-old",
+    state: "failed",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  const disk = storage([initial]);
+  let fail = false,
+    calls = 0;
+  const write = disk.write.bind(disk);
+  disk.write = async (tasks) => {
+    if (fail) throw Error("disk full");
+    return write(tasks);
+  };
+  const queue = new TranslationQueue(disk, async () => {
+    calls++;
+  });
+  await queue.initialize();
+  fail = true;
+  await assert.rejects(queue.restart(initial.id), /disk full/);
+  assert.equal(queue.snapshot()[0].id, initial.id);
+  assert.equal(disk.value[0].id, initial.id);
+  assert.equal(calls, 0);
+  fail = false;
+  await queue.restart(initial.id);
+  await queue.waitForIdle();
+  assert.equal(calls, 1);
+});
+
+test("restart reservation prevents a racing same-source enqueue from cloning the task", async () => {
+  const initial = {
+    ...input("AAAA1111"),
+    id: "failed-old",
+    state: "failed",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  const disk = storage([initial]);
+  let hold = false,
+    entered = false,
+    release,
+    calls = 0;
+  const write = disk.write.bind(disk);
+  disk.write = async (tasks) => {
+    if (hold) {
+      entered = true;
+      await new Promise((resolve) => (release = resolve));
+      hold = false;
+    }
+    return write(tasks);
+  };
+  const queue = new TranslationQueue(disk, async () => {
+    calls++;
+  });
+  await queue.initialize();
+  hold = true;
+  const restarting = queue.restart(initial.id);
+  while (!entered) await tick();
+  const racing = queue.enqueue([input("AAAA1111"), input("BBBB2222")]);
+  release();
+  await restarting;
+  await racing;
+  await queue.waitForIdle();
+  assert.equal(calls, 2);
+  assert.equal(queue.snapshot().length, 2);
+  assert.equal(
+    disk.value.filter((task) => task.sourceKey === "AAAA1111").length,
+    1,
+  );
+  assert.equal(
+    disk.value.some((task) => task.id === initial.id),
+    false,
+  );
+});
+
+test("partial results retain a safe target attachment key across restore, never claim 100 percent", async () => {
+  const disk = storage();
+  const queue = new TranslationQueue(disk, async (_task, report) => {
+    report({ stage: "保留产物", percent: 99 });
+    return {
+      state: "partial",
+      targetKey: "PART1234",
+      message: "译文不完整，PDF 已保留",
+    };
+  });
+  await queue.enqueue([input("AAAA1111")]);
+  await queue.waitForIdle();
+  const task = queue.snapshot()[0];
+  assert.equal(task.state, "partial");
+  assert.equal(task.targetKey, "PART1234");
+  assert.equal(task.progress.percent, 99);
+  const restored = new TranslationQueue(storage(disk.value), async () =>
+    assert.fail("No automatic restart"),
+  );
+  await restored.initialize();
+  assert.deepEqual(restored.snapshot()[0], {
+    ...task,
+    options: { ...task.options, openReader: true },
+  });
+  const ids = await queue.restart(task.id);
+  await queue.waitForIdle();
+  assert.equal(queue.snapshot().length, 1);
+  assert.equal(queue.snapshot()[0].id, ids[0]);
 });

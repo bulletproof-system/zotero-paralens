@@ -5,6 +5,7 @@ const labels: Record<string, string> = {
   queued: "等待中",
   running: "运行中",
   completed: "已完成",
+  partial: "部分完成（译文已保留）",
   failed: "失败",
   cancelled: "已取消",
   interrupted: "已中断（需重新开始）",
@@ -129,7 +130,10 @@ export async function showTaskQueue(
           task.state === "failed"
             ? task.error || "翻译失败，请检查后端和作业状态"
             : task.progress?.message || "";
-        view.detail.setAttribute("data-error", String(task.state === "failed"));
+        view.detail.setAttribute(
+          "data-error",
+          String(task.state === "failed" || task.state === "partial"),
+        );
         if (view.state === task.state) continue;
         view.state = task.state;
         view.actions.replaceChildren();
@@ -141,7 +145,7 @@ export async function showTaskQueue(
           action(view.actions, "重新开始", async () => {
             if (
               win.confirm(
-                "重新开始将完整运行翻译，不从断点继续，可能再次产生 API 费用；已有译文保留，新成功结果成为默认对照。继续？",
+                "重新开始将删除这条旧任务记录并创建新任务，完整运行翻译而非断点继续，可能再次产生 API 费用；已有译文和作业产物保留，新成功结果成为默认对照。继续？",
               )
             )
               await queue.restart(task.id);
@@ -150,6 +154,8 @@ export async function showTaskQueue(
             action(view.actions, "删除任务", () =>
               queue.removeCancelled(task.id),
             );
+          if (task.state === "partial" && task.targetKey)
+            action(view.actions, "打开保留译文", () => open(task));
           if (task.state === "completed")
             action(view.actions, "打开双语对照", () => open(task));
         }

@@ -8,7 +8,9 @@ const stages: Record<string, string> = {
 };
 const errors: Record<string, string> = {
   translation_incomplete:
-    "翻译返回了空内容、被截断，或仍有正文未翻译；请检查模型与服务输出限制后重新开始",
+    "API 返回了空内容或输出被截断；请检查模型与服务输出限制",
+  translation_untranslated:
+    "受限补译后仍有段落未完成；请人工核对保留译文，避免直接反复整篇重译",
   api_auth: "API 鉴权失败，请检查密钥和模型访问权限",
   api_rate_limit: "API 请求被限流或额度不足，请检查服务额度后手动重新开始",
   api_connection: "无法连接 API，请检查网络和 API 地址",
@@ -40,5 +42,43 @@ export function describeJobFailure(value: unknown): string {
     !Object.hasOwn(stages, record.stage)
   )
     return generic;
-  return `${stages[record.stage]}：${errors[record.code]}（${record.code}）`;
+  let detail = "";
+  if (
+    record.code === "translation_untranslated" &&
+    record.quality &&
+    typeof record.quality === "object"
+  ) {
+    const quality = record.quality as Record<string, unknown>;
+    const count = (key: string): number | undefined => {
+      const value = quality[key];
+      return typeof value === "number" &&
+        Number.isSafeInteger(value) &&
+        value >= 0 &&
+        value <= 1000000
+        ? value
+        : undefined;
+    };
+    const pending = count("pending"),
+      repaired = count("repaired"),
+      remaining = count("remaining");
+    if (
+      pending !== undefined &&
+      repaired !== undefined &&
+      remaining !== undefined &&
+      repaired + remaining === pending
+    ) {
+      detail = `；待补译 ${pending} 段，已修复 ${repaired} 段，剩余 ${remaining} 段`;
+      for (const [key, label] of [
+        ["no_input", "无法准备补译"],
+        ["no_chinese_reply", "返回无中文"],
+        ["incomplete_compositions", "仍残留未译内容"],
+        ["response_incomplete", "返回空内容或截断"],
+      ]) {
+        const value = count(key);
+        if (value !== undefined && value > 0 && value <= remaining)
+          detail += `，${label} ${value} 段`;
+      }
+    }
+  }
+  return `${stages[record.stage]}：${errors[record.code]}${detail}（${record.code}）`;
 }

@@ -155,22 +155,33 @@ export class BabelDocBackend implements TranslationBackend {
       // Wait for the child to exit rather than detaching a potentially
       // billable subprocess. Never import a result after cancellation.
       if (this.cancelRequested) throw new TranslationCancelledError();
+      let failureDetail: unknown;
       if (failure) {
-        let detail: unknown;
         try {
-          detail = await IOUtils.readJSON(PathUtils.join(job, "error.json"));
+          failureDetail = await IOUtils.readJSON(
+            PathUtils.join(job, "error.json"),
+          );
         } catch {
           /* Older workers/abrupt exits may have no structured error. */
         }
-        throw new Error(describeJobFailure(detail));
       }
       const resultPath = PathUtils.join(job, "result.json");
       if (!(await IOUtils.exists(resultPath)))
-        throw new Error("BabelDOC 未写入作业结果");
+        throw new Error(
+          failure
+            ? describeJobFailure(failureDetail)
+            : "BabelDOC 未写入作业结果",
+        );
       const result = (await IOUtils.readJSON(resultPath)) as {
         translatedPdfPath: string;
         mappingDraftPath: string;
+        completion?: unknown;
+        warning?: unknown;
       };
+      if (failure && result.completion !== "partial")
+        throw new Error(describeJobFailure(failureDetail));
+      if (result.completion !== undefined && result.completion !== "partial")
+        throw new Error("BabelDOC 结果完成状态不合法");
       const pdf = PathUtils.join(job, "translated.pdf");
       const draft = PathUtils.join(job, "mapping.v1.json");
       if (
@@ -196,7 +207,16 @@ export class BabelDocBackend implements TranslationBackend {
       ) {
         throw new Error("BabelDOC 输出摘要与 PDF 不一致");
       }
-      return { translatedPdfPath: pdf, mappingDraftPath: draft, mapping };
+      return {
+        translatedPdfPath: pdf,
+        mappingDraftPath: draft,
+        mapping,
+        completion: result.completion === "partial" ? "partial" : undefined,
+        warning:
+          result.completion === "partial"
+            ? describeJobFailure(result.warning || failureDetail)
+            : undefined,
+      };
     } finally {
       this.job = undefined;
       await IOUtils.remove(configFile, { ignoreAbsent: true });

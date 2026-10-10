@@ -392,9 +392,8 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
       Zotero.Reader._readers.pop();
       mappingAttachments.at(-1).deleted = true;
     }
-    // An imported PDF without a committed mapping is not a usable pair.
-    // Both checksum failure and mapping-write failure must roll it back,
-    // leaving the previously successful translation untouched.
+    // Corrupt imports roll back; a valid PDF survives mapping failure as a
+    // partial attachment without replacing the existing successful pair.
     let rollbackAttempts = 0;
     const failedTarget = {
       ...target,
@@ -431,12 +430,21 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
             : lookupBeforeFailure(lib, key);
         await translateSelection({ confirm: () => true }, [source]);
         Zotero.Items.getByLibraryAndKeyAsync = lookupBeforeFailure;
-        assert.equal(translationQueue().snapshot().at(-1).state, "failed");
+        assert.equal(translationQueue().snapshot().at(-1).state, "partial");
+        assert.equal(
+          translationQueue().snapshot().at(-1).targetKey,
+          failedTarget.key,
+        );
+        assert.equal(translationQueue().snapshot().at(-1).progress.percent, 99);
         assert(
           labels.some((text) => text.includes("mapping disk full")),
           "cleanup failure must not hide the mapping write failure",
         );
-        assert.equal(rollbackAttempts, 2);
+        assert.equal(
+          rollbackAttempts,
+          1,
+          "Mapping failure must retain a verified PDF",
+        );
       } finally {
         IOUtils.writeJSON = originalWrite;
       }
@@ -450,6 +458,35 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     } finally {
       globalThis.__result.mapping.target.sha256 = originalDigest;
       Zotero.Attachments.importFromFile = originalImport;
+    }
+    // A quality-rejected worker output is retained and clearly labelled,
+    // but must never overwrite the default complete mapping.
+    const partialTarget = { ...target, id: 13, key: "PART1234" };
+    const beforePartialImports = imported.length;
+    const beforePartialMappings = mappingAttachments.length;
+    const beforePartialMapping = await fs.readFile(savedFile, "utf8");
+    Zotero.Attachments.importFromFile = async (args) => {
+      imported.push(args);
+      return partialTarget;
+    };
+    globalThis.__result.completion = "partial";
+    globalThis.__result.warning = "仍有正文未翻译（translation_incomplete）";
+    try {
+      await translateSelection({ confirm: () => true }, [source]);
+      const partialTask = translationQueue().snapshot().at(-1);
+      assert.equal(partialTask.state, "partial");
+      assert.equal(partialTask.targetKey, partialTarget.key);
+      assert.equal(partialTask.progress.percent, 99);
+      assert.match(partialTask.progress.message, /不完整译文已保留/);
+      assert.equal(imported.length, beforePartialImports + 1);
+      assert.match(imported.at(-1).title, /部分翻译/);
+      assert.equal(mappingAttachments.length, beforePartialMappings);
+      assert.equal(await fs.readFile(savedFile, "utf8"), beforePartialMapping);
+      assert.equal(opened.at(-1), partialTarget.id);
+    } finally {
+      Zotero.Attachments.importFromFile = originalImport;
+      delete globalThis.__result.completion;
+      delete globalThis.__result.warning;
     }
     const count = globalThis.__requests.length;
     await translateSelection({ confirm: () => false }, [source]);

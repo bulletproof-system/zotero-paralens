@@ -246,9 +246,14 @@ class AdapterTests(unittest.TestCase):
                     fatal = Path(folder) / f"fatal-{index}"
                     fatal.mkdir()
                     mapping.side_effect = error
-                    with self.assertRaises(type(error)):
-                        asyncio.run(worker.run(payload, source, fatal))
-                    self.assertFalse((fatal / "result.json").exists())
+                    asyncio.run(worker.run(payload, source, fatal))
+                    retained = json.loads((fatal / "result.json").read_text())
+                    self.assertEqual(retained["completion"], "partial")
+                    self.assertTrue((fatal / "translated.pdf").exists())
+                    self.assertTrue((fatal / "artifact-retention.json").exists())
+                    self.assertTrue(any(p.name.startswith("output-") for p in fatal.iterdir()))
+                    self.assertTrue(any(p.name.startswith("babeldoc-") for p in fatal.iterdir()))
+                    self.assertNotIn("private", json.dumps(retained))
                 cancelled = Path(folder) / "cancelled"
                 cancelled.mkdir()
                 def cancel_during_mapping(*args, on_progress):
@@ -297,10 +302,13 @@ class AdapterTests(unittest.TestCase):
                     self.assertTrue((blocked / "cleanup-warning.json").exists())
                     self.assertNotIn("private-key", (blocked / "cleanup-warning.json").read_text())
                     mapping.side_effect = ValueError("original translation failure")
-                    with self.assertRaisesRegex(ValueError, "original translation failure"):
-                        asyncio.run(worker.run(payload, source, failed))
-                    self.assertFalse((failed / "result.json").exists())
-                    self.assertTrue((failed / "cleanup-warning.json").exists())
+                    asyncio.run(worker.run(payload, source, failed))
+                    retained = json.loads((failed / "result.json").read_text())
+                    self.assertEqual(retained["completion"], "partial")
+                    self.assertEqual(retained["warning"]["code"], "mapping_failed")
+                    self.assertTrue((failed / "translated.pdf").exists())
+                    self.assertTrue((failed / "artifact-retention.json").exists())
+                    self.assertFalse((failed / "cleanup-warning.json").exists())
             self.assertTrue((work / "translated.pdf").exists())
             self.assertEqual(json.loads((work / "mapping.v1.json").read_text()), {"schemaVersion": 1})
             self.assertFalse(any(p.name.startswith("babeldoc-") or p.name.startswith("output-") for p in work.iterdir()))

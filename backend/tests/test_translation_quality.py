@@ -141,7 +141,7 @@ class QualityTests(unittest.TestCase):
                 else:
                     stats=worker.repair_untranslated(engine,types.SimpleNamespace(page=[page]),Path(folder),threading.Event(),{id(paragraph):prose})
                     self.assertEqual(stats['repaired'],1)
-                self.assertEqual(len(calls),1)
+                self.assertEqual(len(calls),2 if worker._untranslated_prose(repaired) else 1)
 
     def test_real_babeldoc_preparation_skips_unicode_but_original_snapshot_remains_translatable(self):
         import copy
@@ -185,7 +185,8 @@ class QualityTests(unittest.TestCase):
                 {id(paragraph):{'text':prose,'paragraph':original}})
         self.assertEqual(stats['repaired'],1)
         self.assertEqual(stats['remaining'],0)
-        self.assertIs(prepared_calls[0],original)
+        self.assertIsNot(prepared_calls[0],original)
+        self.assertFalse(prepared_calls[0].parsed_unicode)
         self.assertEqual(paragraph.formula,'v1v')
         self.assertEqual(original.unicode,prose)
 

@@ -26,6 +26,9 @@ export interface TranslationJobResult {
   translatedPdfPath: string;
   mappingDraftPath: string;
   mapping: UnboundMappingV1;
+  completion?: "partial";
+  /** Safe, classified failure description; never raw API output. */
+  warning?: string;
 }
 
 export interface TranslationBackend {

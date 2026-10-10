@@ -218,6 +218,45 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
         }),
         (error) => error.name === "TranslationCancelledError",
       );
+      // Even a nonzero worker exit may contain a validated explicitly partial
+      // result. Raw diagnostic messages must not leak into the retained warning.
+      global.Zotero.Utilities.Internal.exec = async (binary, args) => {
+        const config = JSON.parse(await fs.readFile(args.at(-1), "utf8"));
+        await originalExec(binary, args);
+        const resultFile = path.join(config.jobDirectory, "result.json");
+        const result = JSON.parse(await fs.readFile(resultFile, "utf8"));
+        result.completion = "partial";
+        result.warning = {
+          schemaVersion: 1,
+          stage: "translation",
+          code: "translation_incomplete",
+          message: "TEST_SECRET PRIVATE_TEXT",
+        };
+        await fs.writeFile(resultFile, JSON.stringify(result));
+        return false;
+      };
+      const partialJob = await createBabelDocJobDirectory();
+      const retained = await new BabelDocBackend(project, () => ({
+        available: true,
+        path: path.join(profile, "uv.exe"),
+        message: "ok",
+      })).translate({
+        sourcePath: source,
+        jobDirectory: partialJob,
+        sourceLanguage: "en",
+        targetLanguage: "zh",
+      });
+      assert.equal(retained.completion, "partial");
+      assert.match(retained.warning, /translation_incomplete/);
+      assert.ok(!retained.warning.includes("TEST_SECRET"));
+      assert.equal(
+        await global.IOUtils.exists(retained.translatedPdfPath),
+        true,
+      );
+      assert.equal(
+        await global.IOUtils.exists(path.join(partialJob, "config-1")),
+        false,
+      );
       for (const [diagnostic, pattern] of [
         [
           {

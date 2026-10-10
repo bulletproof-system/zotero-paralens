@@ -13,7 +13,12 @@ import { loadMapping, saveMapping } from "../mapping/store";
 import { MappingV1 } from "../mapping/types";
 import { getPref } from "../utils/prefs";
 import { NativeReaderPair, NativeReaderLike } from "./nativeOverlay";
-import { TranslationQueue, JobOptions, TranslationTask } from "./taskQueue";
+import {
+  TranslationQueue,
+  JobOptions,
+  TranslationTask,
+  TranslationTaskOutcome,
+} from "./taskQueue";
 import { showTaskQueue, closeTaskQueueWindows } from "./taskQueueUI";
 import { resolveProviderConfig } from "../backend/providers";
 import { tileReaderWindows } from "./windowLayout";
@@ -148,7 +153,7 @@ export function translationQueue(): TranslationQueue {
         throw new Error("任务原文附件已删除");
       const win = Zotero.getMainWindow();
       if (!win) throw new Error("请先打开 Zotero 主窗口再重新开始任务");
-      await translateAttachment(win, source, task.options, report);
+      return translateAttachment(win, source, task.options, report);
     },
   );
   return queue;
@@ -162,6 +167,16 @@ export async function openTranslationQueue(win: Window): Promise<void> {
     translationQueue(),
     cancelActiveTranslation,
     async (task: TranslationTask) => {
+      if (task.state === "partial" && task.targetKey) {
+        const target = await Zotero.Items.getByLibraryAndKeyAsync(
+          task.libraryID,
+          task.targetKey,
+        );
+        if (!target || target.deleted || !target.isPDFAttachment())
+          throw new Error("保留的译文附件已删除");
+        await Zotero.Reader.open(target.id);
+        return;
+      }
       const source = await Zotero.Items.getByLibraryAndKeyAsync(
         task.libraryID,
         task.sourceKey,
@@ -248,7 +263,7 @@ async function translateAttachment(
   source: Zotero.Item,
   options: JobOptions,
   report: (progress: TranslationJobProgress) => void,
-): Promise<void> {
+): Promise<void | TranslationTaskOutcome> {
   if (activeBackend) throw new Error("已有翻译任务正在运行");
   const sourcePath = await source.getFilePathAsync();
   if (!sourcePath) throw new Error("找不到本地 PDF；请先下载附件");
@@ -269,7 +284,7 @@ async function translateAttachment(
   activeBackend = backend;
   cancelRequested = false;
   let importedTarget: Zotero.Item | undefined;
-  let mappingSaved = false;
+  let validatedTarget = false;
   try {
     const jobDirectory = await createBabelDocJobDirectory();
     workerRunning = true;
@@ -315,11 +330,12 @@ async function translateAttachment(
       file: result.translatedPdfPath,
       parentItemID: source.parentItemID || undefined,
       libraryID: source.libraryID,
-      title: translatedAttachmentTitle(
-        source.getDisplayTitle(),
-        targetLanguage,
-        existingTranslation || unreadableMapping ? new Date() : undefined,
-      ),
+      title:
+        translatedAttachmentTitle(
+          source.getDisplayTitle(),
+          targetLanguage,
+          existingTranslation || unreadableMapping ? new Date() : undefined,
+        ) + (result.completion === "partial" ? "（部分翻译，需核对）" : ""),
       contentType: "application/pdf",
     });
     importedTarget = target;
@@ -331,10 +347,27 @@ async function translateAttachment(
     ) {
       throw new Error("译文附件校验失败；请检查导入的 PDF");
     }
+    validatedTarget = true;
+    if (result.completion === "partial") {
+      const message =
+        (result.warning || "部分内容未能完成翻译") +
+        "；不完整译文已保留为附件，请人工核对。已有完整双语对照不会被替换。";
+      report({ stage: "部分完成（译文已保留）", percent: 99, message });
+      line.setError();
+      line.setText(message);
+      if (options.openReader !== false) {
+        try {
+          await Zotero.Reader.open(target.id);
+        } catch {
+          /* Attachment remains accessible in the item pane. */
+        }
+      }
+      progress.startCloseTimer(16000);
+      return { state: "partial", targetKey: target.key, message };
+    }
     const mapping = bindAttachmentKeys(result.mapping, source.key, target.key);
     report({ stage: "保存映射附件", percent: 99 });
     await saveMapping(mapping, source.libraryID);
-    mappingSaved = true;
     line.setProgress(100);
     const aligned = mapping.segments.filter(
       (item) => item.status === "aligned",
@@ -357,7 +390,7 @@ async function translateAttachment(
         // The imported attachment remains accessible in the item pane.
       }
       progress.startCloseTimer(16000);
-      return;
+      return { state: "completed", targetKey: target.key };
     }
     line.setText(
       aligned === mapping.segments.length
@@ -371,7 +404,7 @@ async function translateAttachment(
     if (options.openReader === false) {
       line.setText("译文和映射已导入；可从任务队列打开双语对照");
       progress.startCloseTimer(5000);
-      return;
+      return { state: "completed", targetKey: target.key };
     }
     // Show actual Zotero Readers, not a second PDF.js instance.
     try {
@@ -386,16 +419,28 @@ async function translateAttachment(
       );
     }
     progress.startCloseTimer(9000);
+    return { state: "completed", targetKey: target.key };
   } catch (error) {
     if (cancelRequested || error instanceof TranslationCancelledError) {
       line.setText("翻译已取消；已发送的 API 请求可能仍产生费用");
       progress.startCloseTimer(12000);
       throw new TranslationCancelledError();
     }
-    // Only a successfully committed mapping makes this attachment a usable
-    // translation. Roll back a newly imported orphan without masking the
-    // original PDF validation or mapping persistence failure.
-    if (importedTarget && !mappingSaved) {
+    // Mapping/postprocessing failures must not destroy an already validated
+    // PDF. It remains readable, but is never presented as a complete hover pair.
+    if (importedTarget && validatedTarget) {
+      const message =
+        (error instanceof Error ? error.message : "保存段落映射失败") +
+        "；译文 PDF 已保留为附件，但双语映射未完成，请人工核对。";
+      report({ stage: "部分完成（译文已保留）", percent: 99, message });
+      line.setError();
+      line.setText(message);
+      progress.startCloseTimer(16000);
+      return { state: "partial", targetKey: importedTarget.key, message };
+    }
+    // Invalid/corrupt imported bytes are not a safe artifact to retain as a
+    // translation. The worker's local job files are left intact for diagnosis.
+    if (importedTarget && !validatedTarget) {
       try {
         await importedTarget.eraseTx();
       } catch {

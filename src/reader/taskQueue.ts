@@ -3,7 +3,13 @@ import { TranslationJobProgress } from "../backend/contracts";
 import { resolveProviderConfig } from "../backend/providers";
 
 export type JobState =
-  "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
+  | "queued"
+  | "running"
+  | "completed"
+  | "partial"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
 export interface JobOptions {
   backend: "babeldoc";
   sourceLanguage: string;
@@ -26,6 +32,13 @@ export interface TranslationTask {
   updatedAt: string;
   progress?: TranslationJobProgress;
   error?: string;
+  /** A retained Zotero PDF attachment, never a filesystem path or secret. */
+  targetKey?: string;
+}
+export interface TranslationTaskOutcome {
+  state: "completed" | "partial";
+  targetKey?: string;
+  message?: string;
 }
 export interface QueueStorage {
   read(): Promise<unknown>;
@@ -41,12 +54,13 @@ export class TranslationQueue {
   private sequence = 0;
   private saves: Promise<void> = Promise.resolve();
   private listeners = new Set<() => void>();
+  private restartReservations = new Set<string>();
   constructor(
     private readonly storage: QueueStorage,
     private readonly execute: (
       task: TranslationTask,
       report: (progress: TranslationJobProgress) => void,
-    ) => Promise<void>,
+    ) => Promise<void | TranslationTaskOutcome>,
   ) {}
 
   private sanitizeProgress(
@@ -116,6 +130,7 @@ export class TranslationQueue {
             "queued",
             "running",
             "completed",
+            "partial",
             "failed",
             "cancelled",
             "interrupted",
@@ -147,6 +162,11 @@ export class TranslationQueue {
           createdAt: task.createdAt,
           updatedAt: task.updatedAt,
           progress: task.progress && this.sanitizeProgress(task.progress),
+          targetKey:
+            typeof task.targetKey === "string" &&
+            /^[A-Z0-9]{8}$/.test(task.targetKey)
+              ? task.targetKey
+              : undefined,
           error:
             typeof task.error === "string"
               ? task.error.slice(0, 500)
@@ -180,6 +200,7 @@ export class TranslationQueue {
     const added: string[] = [];
     for (const input of inputs) {
       if (
+        this.restartReservations.has(input.libraryID + ":" + input.sourceKey) ||
         this.tasks.some(
           (task) =>
             task.libraryID === input.libraryID &&
@@ -245,7 +266,7 @@ export class TranslationQueue {
         await this.save(); // Persist before any provider request.
         this.changed();
         if (this.stopped) return;
-        await this.execute(
+        const outcome = await this.execute(
           { ...task, options: { ...task.options } },
           (update) => {
             if (task.state !== "running") return;
@@ -259,11 +280,19 @@ export class TranslationQueue {
           },
         );
         if (task.state === "running") {
-          task.state = "completed";
+          task.state = outcome?.state === "partial" ? "partial" : "completed";
+          task.targetKey =
+            outcome?.targetKey && /^[A-Z0-9]{8}$/.test(outcome.targetKey)
+              ? outcome.targetKey
+              : undefined;
           task.progress = {
-            stage: "已完成",
-            percent: 100,
-            message: task.progress?.message,
+            stage:
+              task.state === "partial" ? "部分完成（译文已保留）" : "已完成",
+            percent:
+              task.state === "partial"
+                ? Math.min(99, task.progress?.percent ?? 99)
+                : 100,
+            message: outcome?.message?.slice(0, 500) || task.progress?.message,
           };
         }
       } catch (error) {
@@ -323,9 +352,62 @@ export class TranslationQueue {
   /** Caller must obtain explicit confirmation before restarting paid work. */
   async restart(id: string): Promise<string[]> {
     await this.initialize();
-    const task = this.tasks.find((item) => item.id === id);
-    if (!task || ["queued", "running"].includes(task.state)) return [];
-    return this.enqueue([task]);
+    if (this.stopped) throw new Error("任务队列已停止");
+    // Replace the terminal record only after the replacement is durable. A
+    // failed write keeps the original row; double clicks cannot create clones.
+    const next = this.saves
+      .catch(() => {})
+      .then(async () => {
+        const task = this.tasks.find((item) => item.id === id);
+        if (!task || ["queued", "running"].includes(task.state)) return [];
+        const key = task.libraryID + ":" + task.sourceKey;
+        if (
+          this.tasks.some(
+            (item) =>
+              item.id !== id &&
+              item.libraryID === task.libraryID &&
+              item.sourceKey === task.sourceKey &&
+              ["queued", "running"].includes(item.state),
+          )
+        )
+          return [];
+        const now = new Date().toISOString();
+        const replacement: TranslationTask = {
+          id:
+            Date.now().toString(36) +
+            "-" +
+            ++this.sequence +
+            "-" +
+            Math.random().toString(36).slice(2, 10),
+          libraryID: task.libraryID,
+          sourceKey: task.sourceKey,
+          title: task.title,
+          options: { ...task.options },
+          state: "queued",
+          createdAt: now,
+          updatedAt: now,
+          progress: { stage: "等待中", percent: 0 },
+        };
+        this.restartReservations.add(key);
+        try {
+          await this.storage.write([
+            ...this.snapshot().filter((item) => item.id !== id),
+            replacement,
+          ]);
+          this.tasks = [
+            ...this.tasks.filter((item) => item.id !== id),
+            replacement,
+          ];
+          this.changed();
+          return [replacement.id];
+        } finally {
+          this.restartReservations.delete(key);
+        }
+      });
+    this.saves = next.then(() => {});
+    const ids = await next;
+    if (ids.length) this.start();
+    return ids;
   }
   async stop(): Promise<void> {
     this.stopped = true;
