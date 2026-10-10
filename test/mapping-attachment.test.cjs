@@ -206,3 +206,79 @@ test("committed mapping attachments survive local cache/cleanup failures and rep
     await fs.rm(root, { recursive: true, force: true });
   }
 });
+
+test("partial mappings sync independently, preserve complete defaults and open by exact target", async () => {
+  const root = await fs.mkdtemp(
+    path.join(os.tmpdir(), "paralens-partial-map-"),
+  );
+  try {
+    const complete = structuredClone(fixture);
+    complete.source.attachmentKey = "SOURCE01";
+    complete.target.attachmentKey = "TARGET01";
+    const partial = structuredClone(complete);
+    partial.completion = "partial";
+    partial.target.attachmentKey = "PARTIAL1";
+    partial.provenance.createdAt = "2026-10-10T01:00:00Z";
+    const items = [pdf("SOURCE01", 1), pdf("TARGET01", 2), pdf("PARTIAL1", 3)];
+    const imports = [];
+    mocks(root, 1, items, imports);
+    await saveMapping(complete, 1);
+    const cache = path.join(root, "paralens/mappings/1-SOURCE01.json");
+    const cachedComplete = await fs.readFile(cache, "utf8");
+    await saveMapping(partial, 1);
+    assert.equal(imports.length, 2);
+    assert.match(imports.at(-1).title, /部分翻译/);
+    assert.equal(await fs.readFile(cache, "utf8"), cachedComplete);
+    assert.deepEqual(clean(await loadMapping(1, "SOURCE01")), complete);
+    assert.deepEqual(
+      clean(await loadMapping(1, "SOURCE01", "PARTIAL1")),
+      partial,
+    );
+    assert.deepEqual(
+      clean(await loadMapping(1, "SOURCE01", "TARGET01")),
+      complete,
+    );
+    assert.equal(await loadMapping(1, "SOURCE01", "ABSENT01"), undefined);
+
+    // Synced attachments, not the profile cache, determine the preferred result.
+    await fs.rm(path.join(root, "paralens"), { recursive: true, force: true });
+    assert.deepEqual(clean(await loadMapping(1, "SOURCE01")), complete);
+    assert.deepEqual(
+      clean(await loadMapping(1, "SOURCE01", "PARTIAL1")),
+      partial,
+    );
+    const partialAttachment = items.at(-1);
+    await fs.rm(partialAttachment.file);
+    await assert.rejects(loadMapping(1, "SOURCE01", "PARTIAL1"), /尚未下载/);
+    assert.deepEqual(clean(await loadMapping(1, "SOURCE01")), complete);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a partial mapping is readable without an existing complete translation", async () => {
+  const root = await fs.mkdtemp(
+    path.join(os.tmpdir(), "paralens-only-partial-"),
+  );
+  try {
+    const mapping = structuredClone(fixture);
+    mapping.source.attachmentKey = "SOURCE01";
+    mapping.target.attachmentKey = "PARTIAL1";
+    mapping.completion = "partial";
+    mocks(root, 1, [pdf("SOURCE01", 1), pdf("PARTIAL1", 2)], []);
+    await saveMapping(mapping, 1);
+    assert.equal(
+      await IOUtils.exists(
+        path.join(root, "paralens/mappings/1-SOURCE01.json"),
+      ),
+      false,
+    );
+    assert.deepEqual(clean(await loadMapping(1, "SOURCE01")), mapping);
+    assert.deepEqual(
+      clean(await loadMapping(1, "SOURCE01", "PARTIAL1")),
+      mapping,
+    );
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});

@@ -25,6 +25,12 @@ export function validateMapping(
       `unsupported mapping schema: ${String(value.schemaVersion)}`,
     );
   }
+  if (
+    value.completion !== undefined &&
+    value.completion !== "complete" &&
+    value.completion !== "partial"
+  )
+    throw new Error("mapping.completion is invalid");
   const source = validateDocument(value.source, "source");
   const target = validateDocument(value.target, "target");
   if (!Array.isArray(value.segments))
@@ -63,6 +69,7 @@ export function validateMapping(
   }
   return {
     schemaVersion: MAPPING_SCHEMA_VERSION,
+    ...(value.completion === undefined ? {} : { completion: value.completion }),
     source,
     target,
     segments,

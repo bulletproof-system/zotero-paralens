@@ -25,13 +25,14 @@ ParaLens 是 Zotero 插件：本机 Python/BabelDOC worker 生成单语译文 PD
 4. BabelDOC 解析和翻译 PDF。默认只检查疑似漏译；只有任务的 `autoRepair` 为 `true` 才发起补译请求。
 5. 对可用段落继续排版，生成译文 PDF、映射草稿及摘要。检查或补译异常降级为警告；主动取消和全部 API 请求失败不发布成功结果。
 6. TypeScript 层检查输出路径、PDF、映射结构及源／译 SHA-256，导入译文附件，绑定 Zotero 附件 key。
-7. 完整成功结果保存为默认对照。可用部分译文保留为需人工核对的附件，不覆盖已有默认对照。
+7. 完整成功结果保存为默认对照。可用部分译文及独立映射均保存为需人工核对的附件；可信段落可提供双语对照，不覆盖已有完整默认对照。
 
 ## 映射协议
 
 前端使用 `mapping.v1`（`schemaVersion: 1`），定义见 `src/mapping/types.ts` 和 `src/mapping/mapping.v1.schema.json`。
 
 - `source`／`target` 各自保存 PDF SHA-256、页数和 Zotero 附件 key；worker 输出的草稿不含附件 key。
+- 可选的 `completion` 标记 `complete`／`partial`，缺失时视为完整结果；该标记不改变段落的几何可信状态。
 - `segments` 保存任务内 ID、粒度、状态、置信度及两侧几何。协议允许多页引用，不能据此认定当前 BabelDOC 适配器具备任意跨页合并段落的对齐能力。
 - `provenance` 保存后端、后端版本、适配器版本及创建时间；BabelDOC 的 `debug_id` 不是跨任务稳定标识。
 - 只有 `aligned` 且双侧几何完整的记录可参与悬停；`uncertain` 不产生猜测高亮。

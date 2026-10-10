@@ -11,6 +11,7 @@ class Addon {
     uv?: UVStatus;
     backendProjectDir?: string;
     backendInstallError?: string;
+    backendInstalling?: boolean;
     ztoolkit: ZToolkit;
     locale?: { current: any };
     prefs?: { window: Window };

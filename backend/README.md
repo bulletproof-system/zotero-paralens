@@ -14,6 +14,8 @@ XPI 包含 `pyproject.toml`、`worker.py`、`mapping_adapter.py`，启动时部�
 uv sync --project "<Zotero profile>/paralens/backend" --python 3.12
 ```
 
+设置页「重新安装后端」在已安装状态下也可用，确认后重新部署脚本并执行 `uv sync --reinstall`；重新安装依赖但不删除密钥、附件和作业产物。安装状态检查固定版本及 worker 模块导入，不加载模型或请求翻译。排队／运行任务需先结束或取消，安装期间不启动新翻译。
+
 作业启动使用 `uv run --no-sync --offline`。这些参数限制 uv 的包下载，不阻止 BabelDOC 资源获取或翻译 API 联网。安装和测试的完整说明见[后端设置指南](../docs/backend-setup.md)。
 
 TypeScript 调用接口定义在 `src/backend/contracts.ts`：
@@ -71,7 +73,7 @@ const mapping = bindAttachmentKeys(result.mapping, sourceKey, targetKey);
 
 `translation_untranslated` 表示检测到疑似漏译或补译仍未通过，`translation_incomplete` 表示空／截断输出，`translation_quality_failed` 表示检查／补译内部异常。这些分类不暴露正文、提示词或服务端原始错误。
 
-前端对部分结果仍校验固定路径、映射结构及源／译 SHA-256，导入为「部分翻译，需核对」，不设为默认双语对照。已校验 PDF 在映射保存失败时也保留。未生成或校验失败的 PDF 不保证有可打开的译文。
+前端对部分结果仍校验固定路径、映射结构及源／译 SHA-256，导入为「部分翻译，需核对」，绑定附件 key 后保存独立的映射 JSON，并标记 `completion: "partial"`。可信段落可打开双语对照，但部分映射不替换已有完整默认对照。已校验 PDF 在映射保存失败时也保留。未生成或校验失败的 PDF 不保证有可打开的译文。
 
 失败／部分完成保留 `babeldoc-*`、`output-*` 工作目录；完整成功清理中间目录，清理失败不覆盖原结果。重新开始只替换任务记录，不删除已有产物。失败和取消记录的删除不涉及这些目录或附件。
 

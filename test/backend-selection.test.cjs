@@ -35,6 +35,17 @@ test("explicit installation uses a fixed uv argument array", () => {
     backendInstallArguments("babeldoc", "/profile/paralens/backend"),
     ["sync", "--project", "/profile/paralens/backend", "--python", "3.12"],
   );
+  assert.deepEqual(
+    backendInstallArguments("babeldoc", "/profile/paralens/backend", true),
+    [
+      "sync",
+      "--project",
+      "/profile/paralens/backend",
+      "--python",
+      "3.12",
+      "--reinstall",
+    ],
+  );
   assert.throws(
     () => backendInstallArguments("unsupported", "/profile"),
     /Unsupported backend/,
@@ -67,6 +78,23 @@ test("install button only hides for a runnable venv with the pinned BabelDOC ver
   assert.equal(calls[0].binary, winPython);
   assert.equal(calls[0].args[0], "-c");
   assert.match(calls[0].args[1], /babeldoc.*0\.6\.4/);
+  assert(
+    !calls[0].args[1].includes("high_level"),
+    "Translation readiness keeps the lightweight version probe",
+  );
+  assert.equal(
+    await isBackendInstalled(project, true, exists, execute, true),
+    true,
+  );
+  for (const module of [
+    "pymupdf",
+    "DocLayoutModel",
+    "do_translate",
+    "PDFCreater",
+    "ILTranslatorLLMOnly",
+  ])
+    assert(calls[1].args[1].includes(module));
+  assert(!calls[1].args[1].includes("load_onnx("));
   assert(!calls[0].args.join(" ").includes("API_KEY"));
   present.delete(winPython);
   assert.equal(await isBackendInstalled(project, true, exists, execute), false);
@@ -80,6 +108,30 @@ test("install button only hides for a runnable venv with the pinned BabelDOC ver
     await isBackendInstalled(project, false, exists, async () => {
       throw Error("broken venv");
     }),
+    false,
+  );
+});
+
+test("settings probe rejects a pinned distribution whose worker imports fail", async () => {
+  global.PathUtils = { join: path.join };
+  const execute = async (_binary, args) => !args[1].includes("high_level");
+  assert.equal(
+    await isBackendInstalled(
+      "/profile/backend",
+      false,
+      async () => true,
+      execute,
+    ),
+    true,
+  );
+  assert.equal(
+    await isBackendInstalled(
+      "/profile/backend",
+      false,
+      async () => true,
+      execute,
+      true,
+    ),
     false,
   );
 });

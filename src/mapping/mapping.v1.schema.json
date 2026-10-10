@@ -7,6 +7,7 @@
   "required": ["schemaVersion", "source", "target", "segments", "provenance"],
   "properties": {
     "schemaVersion": { "const": 1 },
+    "completion": { "enum": ["complete", "partial"] },
     "source": { "$ref": "#/$defs/document" },
     "target": { "$ref": "#/$defs/document" },
     "segments": {

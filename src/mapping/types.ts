@@ -61,6 +61,8 @@ export interface MappingProvenance {
 
 export interface MappingV1 {
   schemaVersion: MappingSchemaVersion;
+  /** Translation completeness; absent values denote a complete result. */
+  completion?: "complete" | "partial";
   source: MappingDocument;
   target: MappingDocument;
   segments: MappingSegment[];

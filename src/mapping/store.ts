@@ -4,16 +4,22 @@ import { validateMapping } from "./validation";
 const sourceTag = (key: string) => `paralens-mapping:${key}`;
 const targetTag = (key: string) => `paralens-target:${key}`;
 
-function mappingPath(libraryID: number, sourceKey: string): string {
+function mappingPath(
+  libraryID: number,
+  sourceKey: string,
+  targetKey?: string,
+): string {
   if (!Number.isSafeInteger(libraryID) || libraryID <= 0)
     throw new Error("Invalid library ID");
   if (!/^[A-Z0-9]{8}$/.test(sourceKey))
     throw new Error("Invalid attachment key");
+  if (targetKey !== undefined && !/^[A-Z0-9]{8}$/.test(targetKey))
+    throw new Error("Invalid target attachment key");
   return PathUtils.join(
     PathUtils.profileDir,
     "paralens",
     "mappings",
-    `${libraryID}-${sourceKey}.json`,
+    `${libraryID}-${sourceKey}${targetKey ? "-" + targetKey : ""}.json`,
   );
 }
 
@@ -42,7 +48,11 @@ export async function saveMapping(
   libraryID: number,
 ): Promise<void> {
   mapping = validateMapping(mapping);
-  const path = mappingPath(libraryID, mapping.source.attachmentKey);
+  const path = mappingPath(
+    libraryID,
+    mapping.source.attachmentKey,
+    mapping.completion === "partial" ? mapping.target.attachmentKey : undefined,
+  );
   const source = await Zotero.Items.getByLibraryAndKeyAsync(
     libraryID,
     mapping.source.attachmentKey,
@@ -74,7 +84,9 @@ export async function saveMapping(
       file: draft,
       libraryID,
       parentItemID: target.parentItemID || source.parentItemID || undefined,
-      title: `ParaLens · 段落映射 · ${source.key} · ${target.key}`,
+      title:
+        `ParaLens · 段落映射 · ${source.key} · ${target.key}` +
+        (mapping.completion === "partial" ? "（部分翻译，需核对）" : ""),
       contentType: "application/json",
     });
     attachment.addTag(sourceTag(source.key));
@@ -110,14 +122,17 @@ export async function saveMapping(
 export async function loadMapping(
   libraryID: number,
   sourceKey: string,
+  targetKey?: string,
 ): Promise<MappingV1 | undefined> {
-  const path = mappingPath(libraryID, sourceKey);
+  const path = mappingPath(libraryID, sourceKey, targetKey);
   const source = await Zotero.Items.getByLibraryAndKeyAsync(
     libraryID,
     sourceKey,
   );
   if (source) {
-    const attachments = await candidates(libraryID, source);
+    const attachments = (await candidates(libraryID, source)).filter(
+      (attachment) => !targetKey || attachment.hasTag(targetTag(targetKey)),
+    );
     const mappings: MappingV1[] = [];
     let missing = false,
       damaged = false;
@@ -131,6 +146,7 @@ export async function loadMapping(
         const mapping = validateMapping(await IOUtils.readJSON(stored));
         if (
           mapping.source.attachmentKey !== sourceKey ||
+          (targetKey && mapping.target.attachmentKey !== targetKey) ||
           !attachment.hasTag(targetTag(mapping.target.attachmentKey))
         )
           throw new Error("映射附件与 PDF 不一致");
@@ -147,8 +163,10 @@ export async function loadMapping(
     if (mappings.length) {
       mappings.sort(
         (a, b) =>
+          Number(a.completion === "partial") -
+            Number(b.completion === "partial") ||
           Date.parse(b.provenance.createdAt) -
-          Date.parse(a.provenance.createdAt),
+            Date.parse(a.provenance.createdAt),
       );
       return mappings[0];
     }
@@ -159,8 +177,14 @@ export async function loadMapping(
     // If synced mapping metadata exists, never fall back to a stale per-device cache.
     if (attachments.length) return undefined;
   }
-  if (!(await IOUtils.exists(path))) return undefined;
-  const mapping = validateMapping(await IOUtils.readJSON(path));
+  const cachePath = (await IOUtils.exists(path))
+    ? path
+    : targetKey
+      ? mappingPath(libraryID, sourceKey)
+      : undefined;
+  if (!cachePath || !(await IOUtils.exists(cachePath))) return undefined;
+  const mapping = validateMapping(await IOUtils.readJSON(cachePath));
+  if (targetKey && mapping.target.attachmentKey !== targetKey) return undefined;
   if (mapping.source.attachmentKey !== sourceKey)
     throw new Error("Mapping source attachment mismatch");
   // Migrate older profile-only mappings into a stored attachment on first use.

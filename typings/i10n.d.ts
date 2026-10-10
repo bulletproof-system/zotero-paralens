@@ -19,6 +19,7 @@ export type FluentMessageId =
   | 'pref-backend'
   | 'pref-backend-install'
   | 'pref-backend-note'
+  | 'pref-backend-reinstall'
   | 'pref-base-url'
   | 'pref-concurrency'
   | 'pref-delete-key'

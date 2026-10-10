@@ -14,6 +14,10 @@ ParaLens 为技术原型。Windows / Zotero 10.0.3 是本机隔离 GUI 测试环
 
 依赖版本以 `package.json`、`package-lock.json` 和 `backend/pyproject.toml` 为准，不以文档中的样本结果替代实际环境检查。
 
+## TypeScript 与静态检查
+
+项目构建和类型检查使用 TypeScript `7.0.2`。`@zotero-plugin/eslint-config` 下的 `typescript-eslint` 声明支持 TypeScript `>=4.8.4 <6.1.0`，因此 `package.json` 的 `overrides` 将该依赖树使用的 TypeScript 固定为 `6.0.3`，与根级编译器隔离。ESLint 检查规则保持启用，安装依赖不需要 `--force` 或 `--legacy-peer-deps`。
+
 ## PDF 与映射
 
 - 支持路径为具有可用文本层的数字 PDF；扫描件和无文本层 PDF 不属于完整支持范围，不提供 OCR。

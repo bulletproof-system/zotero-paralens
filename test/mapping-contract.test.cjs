@@ -510,3 +510,18 @@ test("nested images prefer the smallest actual region and keep the containing fi
     }
   }
 });
+
+test("translation completeness survives binding and validation without changing legacy mappings", () => {
+  assert.equal(validateMapping(sample()).completion, undefined);
+  const draft = sample();
+  delete draft.source.attachmentKey;
+  delete draft.target.attachmentKey;
+  draft.completion = "partial";
+  const mapping = bindAttachmentKeys(draft, "S", "T");
+  assert.equal(mapping.completion, "partial");
+  assert.equal(validateMapping(mapping).completion, "partial");
+  assert.throws(
+    () => validateMapping({ ...mapping, completion: "unknown" }),
+    /completion/,
+  );
+});

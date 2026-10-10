@@ -4,13 +4,15 @@
 
 插件启动检查设置中的 uv 绝对路径、进程 `PATH` 和常见安装目录，并执行 `uv --version`。找不到 uv 时禁用翻译，设置页仍可修改路径和重新检测。
 
-启动部署 XPI 中的 `pyproject.toml`、`worker.py`、`mapping_adapter.py` 至 `<Zotero profile>/paralens/backend/`，仅替换受管文件，保留 `.venv`、`uv.lock` 和作业数据。部署不安装 Python 包；设置页检查虚拟环境中的 Python 能否加载固定版本 BabelDOC，而不是仅检查目录存在。
+启动部署 XPI 中的 `pyproject.toml`、`worker.py`、`mapping_adapter.py` 至 `<Zotero profile>/paralens/backend/`，仅替换受管文件，保留 `.venv`、`uv.lock` 和作业数据。部署不安装 Python 包；设置页检查虚拟环境中的 Python 能否加载固定版本 BabelDOC，并导入 worker 所需模块，而不是仅检查目录存在或包版本元数据；检查不加载模型或发送翻译请求。
 
 用户点击「安装后端」后，使用已检测到的 uv 执行：
 
 ```sh
 uv sync --project "<Zotero profile>/paralens/backend" --python 3.12
 ```
+
+设置页始终提供「重新安装后端」。用户确认后重新部署三个受管文件，并执行同一同步命令加 `--reinstall`，重新安装所有 Python 依赖以修复后端加载失败。保留 API Key、PDF、映射附件、已有作业和 `.venv` 目录，不整目录删除。安装期间禁用重复操作和新翻译；有排队／运行任务时需先完成或取消。
 
 项目要求 Python 3.12、`babeldoc==0.6.4`。安装可能下载 Python 和依赖；模型及字体也可能在首次翻译时由 BabelDOC 获取。npm 只构建插件，不能代替 uv 后端安装。
 
@@ -63,7 +65,7 @@ PDF 解析和排版在本机，待译文本发送给配置的服务。翻译和�
 
 正文请求的输出预算至少为 8192；空白或截断时追加一次更大预算尝试。请求控制还包含有限的连接／服务错误重试，补译阶段禁用嵌套重试。重试与补译可能增加费用。针对代码识别的 DeepSeek 模型，在未显式配置思考参数时设置 `thinking.type=disabled`；不向其他模型发送特有参数。
 
-疑似漏译、检查／补译异常、部分 API 失败或映射不可用时，继续尝试排版并保留可用 PDF。校验通过的部分结果以「部分翻译，需核对」导入，不覆盖已有默认对照；全部 API 失败、主动取消以及初始翻译／排版的致命错误不伪装为成功。
+疑似漏译、检查／补译异常、部分 API 失败或映射不可用时，继续尝试排版并保留可用 PDF。校验通过的部分结果以「部分翻译，需核对」导入，同时保存独立映射 JSON；有可信段落则可打开对应双语对照，仍需人工核对，不覆盖已有完整默认对照；全部 API 失败、主动取消以及初始翻译／排版的致命错误不伪装为成功。
 
 安全分类包括 `translation_untranslated`、`translation_incomplete`、`translation_quality_failed`、`api_auth`、`api_rate_limit`、`mapping_failed` 等。`translation-quality.json` 记录计数，不存正文、提示词或 API 返回文本。
 

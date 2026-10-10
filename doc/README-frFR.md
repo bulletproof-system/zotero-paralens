@@ -15,7 +15,7 @@ npm run build
 
 Installer `.scaffold/build/zotero-paralens.xpi` depuis le gestionnaire d’extensions de Zotero, puis redémarrer Zotero. Le backend exige uv et Python 3.12 ; npm seul ne suffit pas.
 
-Dans les préférences ParaLens, vérifier le chemin uv, choisir BabelDOC et cliquer sur l’installation du backend si nécessaire. Cette action peut télécharger Python et les dépendances ; BabelDOC peut aussi télécharger des modèles ou des polices. Le démarrage du plugin n’installe pas automatiquement les dépendances.
+Dans les préférences ParaLens, vérifier le chemin uv, choisir BabelDOC et cliquer sur l’installation du backend si nécessaire. Cette action peut télécharger Python et les dépendances ; BabelDOC peut aussi télécharger des modèles ou des polices. Le démarrage du plugin n’installe pas automatiquement les dépendances. Le bouton de réinstallation du backend reste disponible ; après confirmation, il redéploie les scripts et réinstalle les dépendances sans supprimer les clés, pièces jointes ou fichiers de travail. Terminer ou annuler les traductions avant cette opération.
 
 ## Configuration
 
@@ -40,7 +40,7 @@ Le JSON de correspondance est une pièce jointe Zotero. Sur un autre appareil, s
 - Les tâches en attente ou en cours peuvent être annulées ; les requêtes déjà envoyées peuvent rester facturées.
 - Les tâches échouées ou annulées proposent une suppression de leur ligne. Les PDF, pièces jointes de correspondance et fichiers de travail sont conservés ; aucune API n’est appelée.
 - Le redémarrage demande confirmation et remplace la ligne par une nouvelle tâche, sans supprimer les pièces jointes existantes.
-- Une omission probable, une erreur de contrôle／réparation ou une erreur partielle permet de tenter la production d’un PDF. Un résultat partiel validé est conservé pour vérification manuelle, sans remplacer la comparaison complète par défaut.
+- Une omission probable, une erreur de contrôle／réparation ou une erreur partielle permet de tenter la production d’un PDF. Un résultat partiel validé conserve le PDF et une pièce jointe JSON de correspondance distincte pour vérification manuelle, sans remplacer la comparaison complète par défaut. Les paragraphes dont la correspondance est vérifiée permettent une comparaison bilingue ; en l’absence de correspondance fiable, seul le PDF traduit est ouvert.
 - Une annulation, l’échec de toutes les requêtes API ou l’absence de PDF valide ne sont pas présentés comme une réussite.
 
 ## Confidentialité et limites

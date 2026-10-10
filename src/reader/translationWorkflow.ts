@@ -78,6 +78,8 @@ function progressWindow(win: Window): Zotero.ProgressWindow {
 }
 
 async function assertReady(): Promise<void> {
+  if (addon.data.backendInstalling)
+    throw new Error("后端正在安装，请等待完成后再启动翻译");
   const selected = getPref("backend") || "babeldoc";
   if (resolveBackend(selected).id !== selected || selected !== "babeldoc")
     throw new Error("不支持的翻译后端");
@@ -92,8 +94,10 @@ async function assertReady(): Promise<void> {
     ))
   )
     throw new Error(
-      "BabelDOC 尚未安装或版本不正确；请到 ParaLens 设置点击安装后端",
+      "BabelDOC 尚未安装、版本不匹配或模块加载失败；请到 ParaLens 设置安装或重新安装后端",
     );
+  if (addon.data.backendInstalling)
+    throw new Error("后端正在安装，请等待完成后再启动翻译");
 }
 
 let queue: TranslationQueue | undefined;
@@ -175,6 +179,24 @@ export async function openTranslationQueue(win: Window): Promise<void> {
         );
         if (!target || target.deleted || !target.isPDFAttachment())
           throw new Error("保留的译文附件已删除");
+        try {
+          const mapping = await loadMapping(
+            task.libraryID,
+            task.sourceKey,
+            task.targetKey,
+          );
+          if (
+            mapping?.segments.some((segment) => segment.status === "aligned")
+          ) {
+            if (!(await openBilingual(mapping, task.libraryID)))
+              throw new Error(
+                "已打开部分译文对照，但当前 Reader 不支持双语悬停",
+              );
+            return;
+          }
+        } catch {
+          Zotero.debug("[ParaLens] 部分译文映射无法打开；保留译文仍可直接阅读");
+        }
         await Zotero.Reader.open(target.id);
         return;
       }
@@ -350,16 +372,28 @@ async function translateAttachment(
       throw new Error("译文附件校验失败；请检查导入的 PDF");
     }
     validatedTarget = true;
+    const mapping = bindAttachmentKeys(
+      { ...result.mapping, completion: result.completion || "complete" },
+      source.key,
+      target.key,
+    );
+    report({ stage: "保存映射附件", percent: 99 });
+    await saveMapping(mapping, source.libraryID);
     if (result.completion === "partial") {
       const message =
         (result.warning || "部分内容未能完成翻译") +
-        "；不完整译文已保留为附件，请人工核对。已有完整双语对照不会被替换。";
+        "；不完整译文已保留为附件，段落映射已保存，请人工核对。已有完整双语对照不会被替换。" +
+        (mapping.segments.some((segment) => segment.status === "aligned")
+          ? "仅可信段落支持双语对照。"
+          : "没有可信段落映射，可直接阅读译文 PDF。");
       report({ stage: "部分完成（译文已保留）", percent: 99, message });
       line.setError();
       line.setText(message);
       if (options.openReader !== false) {
         try {
-          await Zotero.Reader.open(target.id);
+          if (mapping.segments.some((segment) => segment.status === "aligned"))
+            await openBilingual(mapping, source.libraryID);
+          else await Zotero.Reader.open(target.id);
         } catch {
           /* Attachment remains accessible in the item pane. */
         }
@@ -367,9 +401,6 @@ async function translateAttachment(
       progress.startCloseTimer(16000);
       return { state: "partial", targetKey: target.key, message };
     }
-    const mapping = bindAttachmentKeys(result.mapping, source.key, target.key);
-    report({ stage: "保存映射附件", percent: 99 });
-    await saveMapping(mapping, source.libraryID);
     line.setProgress(100);
     const aligned = mapping.segments.filter(
       (item) => item.status === "aligned",

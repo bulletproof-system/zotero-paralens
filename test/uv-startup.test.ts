@@ -143,10 +143,20 @@ describe("ParaLens uv startup", function () {
           const backendStatus = win!.document.getElementById(
             "paralens-backend-status",
           );
-          for (let j = 0; j < 30 && !backendStatus?.textContent; j++)
+          for (
+            let j = 0;
+            j < 300 && (!backendStatus?.textContent || install.disabled);
+            j++
+          )
             await Zotero.Promise.delay(100);
           assert.isNotEmpty(backendStatus?.textContent);
           assert.equal(install.hidden, installed);
+          const reinstall = win!.document.getElementById(
+            "paralens-backend-reinstall",
+          ) as HTMLButtonElement;
+          assert.isNotNull(reinstall);
+          assert.isFalse(reinstall.hidden);
+          assert.isFalse(reinstall.disabled);
           (
             win!.document.getElementById("paralens-save") as HTMLButtonElement
           ).click();
@@ -333,7 +343,7 @@ describe("ParaLens uv startup", function () {
       button()!.click();
       for (
         let i = 0;
-        i < 80 && (!button()!.hidden || !(await IOUtils.exists(record)));
+        i < 300 && (!button()!.hidden || !(await IOUtils.exists(record)));
         i++
       )
         await Zotero.Promise.delay(100);
@@ -359,6 +369,51 @@ describe("ParaLens uv startup", function () {
           .disabled,
       );
       assert.equal(instance.data.backendProjectDir, installedDir);
+      const reinstall = win!.document.getElementById(
+        "paralens-backend-reinstall",
+      ) as HTMLButtonElement;
+      assert.isFalse(
+        reinstall.hidden,
+        "Repair is available even with an installed backend",
+      );
+      const confirm = win!.confirm;
+      let confirmation = "";
+      try {
+        win!.confirm = (message) => {
+          confirmation = message || "";
+          return false;
+        };
+        reinstall.click();
+        await Zotero.Promise.delay(100);
+        assert.match(confirmation, /重新安装|Reinstall/);
+        assert.deepEqual(
+          (await IOUtils.readUTF8(record)).trim().split(/\r?\n/),
+          syncArgs,
+          "Declining reinstall must not run uv",
+        );
+        win!.confirm = () => true;
+        reinstall.click();
+        assert.isTrue(reinstall.disabled, "Disable duplicate reinstall clicks");
+        assert.isTrue(button()!.disabled);
+        reinstall.click();
+        const status = win!.document.getElementById("paralens-backend-status")!;
+        for (
+          let i = 0;
+          i < 300 &&
+          (reinstall.disabled ||
+            !/重新安装完成|reinstalled/.test(status.textContent || ""));
+          i++
+        )
+          await Zotero.Promise.delay(100);
+        assert.match(status.textContent || "", /重新安装完成|reinstalled/);
+        assert.isFalse(reinstall.disabled);
+        assert.deepEqual(
+          (await IOUtils.readUTF8(record)).trim().split(/\r?\n/),
+          [...syncArgs, "--reinstall"],
+        );
+      } finally {
+        win!.confirm = confirm;
+      }
     } finally {
       win?.close();
       instance.data.backendProjectDir = installedDir;

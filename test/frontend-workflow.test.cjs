@@ -27,6 +27,10 @@ async function loadWorkflow() {
             path: "overlay",
             namespace: "mock",
           }));
+          build.onResolve({ filter: /taskQueueUI$/ }, () => ({
+            path: "queueUI",
+            namespace: "mock",
+          }));
           build.onLoad(
             { filter: /.*/, namespace: "mock" },
             ({ path: name }) => ({
@@ -48,7 +52,10 @@ async function loadWorkflow() {
                globalThis.__resolveJob?.(globalThis.__result);
              }
            }`
-                  : `export class NativeReaderPair { attach() { return true; } detach() {} }`,
+                  : name === "queueUI"
+                    ? `export async function showTaskQueue(win, queue, cancel, open) { globalThis.__openTask = open; }
+                       export function closeTaskQueueWindows() {}`
+                    : `export class NativeReaderPair { attach() { return true; } detach() {} }`,
               loader: "js",
             }),
           );
@@ -64,6 +71,7 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
   const {
     translateSelection,
     openSavedBilingual,
+    openTranslationQueue,
     selectedSourceAttachment,
     translatedAttachmentTitle,
     detachBilingual,
@@ -103,6 +111,7 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     getFilePathAsync: async () => translatedPath,
   };
   const mappingAttachments = [];
+  const targets = new Map([[target.key, target]]);
   const opened = [],
     imported = [],
     labels = [],
@@ -183,7 +192,7 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
             },
       getAll: async () => mappingAttachments,
       getByLibraryAndKeyAsync: async (_libraryID, key) =>
-        ({ ABCD1234: source, EFGH5678: target })[key] || false,
+        (key === source.key ? source : targets.get(key)) || false,
     },
     Attachments: {
       importFromFile: async (args) => {
@@ -246,6 +255,18 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     reported.push(translationQueue().snapshot().at(-1)?.progress),
   );
   try {
+    global.addon.data.backendInstalling = true;
+    await assert.rejects(
+      translateSelection(
+        {
+          confirm: () => assert.fail("No billing confirmation during install"),
+        },
+        [source],
+      ),
+      /后端正在安装/,
+    );
+    assert.equal(globalThis.__requests.length, 0);
+    global.addon.data.backendInstalling = false;
     await translateSelection({ confirm: () => true } /* window */, [source]);
     assert.ok(percentages.includes(36));
     assert.ok(
@@ -460,13 +481,19 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
       globalThis.__result.mapping.target.sha256 = originalDigest;
       Zotero.Attachments.importFromFile = originalImport;
     }
-    // A quality-rejected worker output is retained and clearly labelled,
-    // but must never overwrite the default complete mapping.
+    // Partial results keep an independent mapping and cannot displace a complete pair.
     const partialTarget = { ...target, id: 13, key: "PART1234" };
+    targets.set(partialTarget.key, partialTarget);
+    Zotero.Reader._readers.push({
+      itemID: partialTarget.id,
+      _item: partialTarget,
+    });
+    const beforePartialOpened = opened.length;
     const beforePartialImports = imported.length;
     const beforePartialMappings = mappingAttachments.length;
     const beforePartialMapping = await fs.readFile(savedFile, "utf8");
     Zotero.Attachments.importFromFile = async (args) => {
+      if (args.contentType === "application/json") return originalImport(args);
       imported.push(args);
       return partialTarget;
     };
@@ -486,14 +513,80 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
       assert.match(partialTask.progress.message, /不完整译文已保留/);
       assert.equal(imported.length, beforePartialImports + 1);
       assert.match(imported.at(-1).title, /部分翻译/);
-      assert.equal(mappingAttachments.length, beforePartialMappings);
+      assert.equal(mappingAttachments.length, beforePartialMappings + 1);
+      const partialMapping = JSON.parse(
+        await fs.readFile(
+          await mappingAttachments.at(-1).getFilePathAsync(),
+          "utf8",
+        ),
+      );
+      assert.equal(partialMapping.completion, "partial");
+      assert.equal(partialMapping.target.attachmentKey, partialTarget.key);
+      assert.match(partialTask.progress.message, /段落映射已保存/);
       assert.equal(await fs.readFile(savedFile, "utf8"), beforePartialMapping);
-      assert.equal(opened.at(-1), partialTarget.id);
+      assert.deepEqual(opened.slice(beforePartialOpened), [
+        source.id,
+        partialTarget.id,
+      ]);
+      await openSavedBilingual([source]);
+      assert.deepEqual(opened.slice(-2), [source.id, target.id]);
+      await openTranslationQueue({});
+      await globalThis.__openTask(partialTask);
+      assert.deepEqual(opened.slice(-2), [source.id, partialTarget.id]);
+
+      const originalSegments = globalThis.__result.mapping.segments;
+      globalThis.__result.mapping.segments = [
+        {
+          id: "mapping-unavailable",
+          level: "paragraph",
+          status: "failed",
+          source: [],
+          target: [],
+          metadata: { reason: "mapping_unavailable" },
+        },
+      ];
+      try {
+        const beforeNoAlignment = opened.length;
+        await translateSelection({ confirm: () => true }, [source]);
+        const noAlignmentTask = translationQueue().snapshot().at(-1);
+        assert.equal(noAlignmentTask.state, "partial");
+        assert.match(noAlignmentTask.progress.message, /没有可信段落映射/);
+        assert.deepEqual(opened.slice(beforeNoAlignment), [partialTarget.id]);
+        await globalThis.__openTask(noAlignmentTask);
+        assert.equal(opened.at(-1), partialTarget.id);
+      } finally {
+        globalThis.__result.mapping.segments = originalSegments;
+      }
+
+      const originalWrite = IOUtils.writeJSON;
+      IOUtils.writeJSON = async (file, value) => {
+        if (file.endsWith(".attachment.json"))
+          throw Error("partial mapping disk full");
+        return originalWrite(file, value);
+      };
+      try {
+        await translateSelection({ confirm: () => true }, [source]);
+        const failedMappingTask = translationQueue().snapshot().at(-1);
+        assert.equal(failedMappingTask.state, "partial");
+        assert.equal(failedMappingTask.targetKey, partialTarget.key);
+        assert.match(
+          failedMappingTask.progress.message,
+          /partial mapping disk full/,
+        );
+        assert.match(failedMappingTask.progress.message, /双语映射未完成/);
+        assert.equal(
+          await fs.readFile(savedFile, "utf8"),
+          beforePartialMapping,
+        );
+      } finally {
+        IOUtils.writeJSON = originalWrite;
+      }
     } finally {
       Zotero.Attachments.importFromFile = originalImport;
       Zotero.Prefs.get = originalGetPref;
       delete globalThis.__result.completion;
       delete globalThis.__result.warning;
+      delete globalThis.__openTask;
     }
     const count = globalThis.__requests.length;
     await translateSelection({ confirm: () => false }, [source]);

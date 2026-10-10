@@ -10,7 +10,15 @@ export function resolveBackend(id: string): (typeof BACKENDS)[number] {
 export function backendInstallArguments(
   id: BackendId,
   projectDir: string,
+  reinstall = false,
 ): string[] {
   if (id !== "babeldoc" || !projectDir) throw new Error("Unsupported backend");
-  return ["sync", "--project", projectDir, "--python", "3.12"];
+  return [
+    "sync",
+    "--project",
+    projectDir,
+    "--python",
+    "3.12",
+    ...(reinstall ? ["--reinstall"] : []),
+  ];
 }

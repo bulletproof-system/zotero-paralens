@@ -20,6 +20,7 @@ import {
 } from "../backend/selection";
 import { getPref, setPref } from "../utils/prefs";
 import { registerLicenseUI } from "../utils/license";
+import { translationQueue } from "../reader/translationWorkflow";
 
 export async function registerPrefsScripts(win: Window): Promise<void> {
   registerLicenseUI(win);
@@ -37,6 +38,9 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
   ) as HTMLInputElement | null;
   const status = doc.getElementById("paralens-uv-status");
   const backendStatus = doc.getElementById("paralens-backend-status");
+  const backendReinstall = doc.getElementById(
+    "paralens-backend-reinstall",
+  ) as HTMLButtonElement | null;
   const sourceLanguage = doc.getElementById(
     "paralens-source-language",
   ) as HTMLSelectElement | null;
@@ -66,6 +70,7 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
     !uvPath ||
     !status ||
     !backendStatus ||
+    !backendReinstall ||
     !sourceLanguage ||
     !targetLanguage ||
     !backendSelect ||
@@ -182,6 +187,7 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
       Services.appinfo.OS === "WINNT",
       (path) => IOUtils.exists(path),
       async (path, args) => (await executeHidden(path, args)) === true,
+      true,
     );
   const showBackend = async () => {
     const selected = backendSelect.value;
@@ -191,12 +197,20 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
     const backendDir =
       addon.data.backendProjectDir || bundledBackendProjectDir();
     backendInstall.disabled = true;
+    backendReinstall.disabled = true;
     const installed = await checkBackendInstalled(backendDir);
-    if (check !== backendCheck || backendSelect.value !== selected) return;
+    if (
+      check !== backendCheck ||
+      backendSelect.value !== selected ||
+      installing ||
+      addon.data.backendInstalling
+    )
+      return;
     // A click initiates provisioning; neither opening preferences nor saving
     // settings downloads Python packages.
     backendInstall.hidden = installed;
     backendInstall.disabled = installing;
+    backendReinstall.disabled = installing;
     report(
       backendStatus,
       installed
@@ -218,10 +232,37 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
   backendSelect.addEventListener("change", () => {
     void showBackend();
   });
-  backendInstall.addEventListener("click", async () => {
-    if (installing) return;
+  const provisionBackend = async (reinstall: boolean) => {
+    if (installing || addon.data.backendInstalling) return;
+    if (
+      translationQueue()
+        .snapshot()
+        .some((task) => ["queued", "running"].includes(task.state))
+    ) {
+      report(
+        backendStatus,
+        msg(
+          "请先等待翻译完成或取消排队和运行中的任务，再安装／重新安装后端。",
+          "Finish or cancel queued/running translations before installing or reinstalling the backend.",
+        ),
+      );
+      return;
+    }
+    if (
+      reinstall &&
+      !win.confirm(
+        msg(
+          "重新安装将重新部署后端脚本，并由 uv 重新安装 Python 依赖，可能联网下载并占用时间。不会删除 API Key、PDF、映射附件或已有作业产物。继续？",
+          "Reinstall will redeploy backend scripts and reinstall Python dependencies using uv, which may download files and take time. API keys, PDFs, mapping attachments and existing job artifacts are retained. Continue?",
+        ),
+      )
+    )
+      return;
     installing = true;
+    addon.data.backendInstalling = true;
+    ++backendCheck;
     backendInstall.disabled = true;
+    backendReinstall.disabled = true;
     backendSelect.disabled = true;
     const backend = resolveBackend(backendSelect.value);
     try {
@@ -245,11 +286,16 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
         );
       report(
         backendStatus,
-        msg(`正在安装 ${backend.name}…`, `Installing ${backend.name}…`),
+        reinstall
+          ? msg(
+              `正在重新安装 ${backend.name}…`,
+              `Reinstalling ${backend.name}…`,
+            )
+          : msg(`正在安装 ${backend.name}…`, `Installing ${backend.name}…`),
       );
       const success = await executeHidden(
         uv.path,
-        backendInstallArguments(backend.id, projectDir),
+        backendInstallArguments(backend.id, projectDir, reinstall),
       );
       if (success !== true || !(await checkBackendInstalled(projectDir)))
         throw new Error(
@@ -258,7 +304,14 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
             "Installation failed; check network, free space, and uv logs.",
           ),
         );
-      await showBackend();
+      report(
+        backendStatus,
+        msg(
+          reinstall ? "后端重新安装完成。" : "后端安装完成。",
+          reinstall ? "Backend reinstalled." : "Backend installed.",
+        ),
+      );
+      backendInstall.hidden = true;
     } catch (error) {
       report(
         backendStatus,
@@ -268,9 +321,17 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
       );
     } finally {
       installing = false;
+      addon.data.backendInstalling = false;
       backendInstall.disabled = false;
+      backendReinstall.disabled = false;
       backendSelect.disabled = false;
     }
+  };
+  backendInstall.addEventListener("click", () => {
+    void provisionBackend(false);
+  });
+  backendReinstall.addEventListener("click", () => {
+    void provisionBackend(true);
   });
   showProvider();
   void showBackend();

@@ -1,10 +1,10 @@
 {
   "project": {
     "name": "zotero-paralens",
-    "version": "0.1.5",
+    "version": "0.1.6",
     "license": "AGPL-3.0-or-later",
-    "source": "https://github.com/bulletproof-system/zotero-paralens/tree/v0.1.5",
-    "sourceArchive": "https://github.com/bulletproof-system/zotero-paralens/releases/download/v0.1.5/zotero-paralens-0.1.5-source.tar.gz"
+    "source": "https://github.com/bulletproof-system/zotero-paralens/tree/v0.1.6",
+    "sourceArchive": "https://github.com/bulletproof-system/zotero-paralens/releases/download/v0.1.6/zotero-paralens-0.1.6-source.tar.gz"
   },
   "bundled": [
     {
