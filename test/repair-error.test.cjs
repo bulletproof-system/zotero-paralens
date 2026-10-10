@@ -30,7 +30,7 @@ test("repair warnings distinguish untranslated prose from empty API content with
     message: "PRIVATE_API_KEY PRIVATE_DOCUMENT",
     quality: { ...warning.quality, filename: "PRIVATE_PATH" },
   });
-  assert.match(message, /待补译 3 段，已修复 1 段，剩余 2 段/);
+  assert.match(message, /疑似漏译 3 段，已修复 1 段，剩余 2 段/);
   assert.match(message, /返回无中文 1 段/);
   assert.match(message, /仍残留未译内容 1 段/);
   assert.match(message, /translation_untranslated/);
@@ -40,7 +40,7 @@ test("repair warnings distinguish untranslated prose from empty API content with
     code: "translation_incomplete",
   });
   assert.match(empty, /API 返回了空内容或输出被截断/);
-  assert.ok(!empty.includes("待补译"));
+  assert.ok(!empty.includes("疑似漏译 "));
 });
 
 test("untrusted repair counters are ignored, never interpolated as arbitrary strings", () => {
@@ -49,14 +49,14 @@ test("untrusted repair counters are ignored, never interpolated as arbitrary str
       ...warning,
       quality: { ...warning.quality, pending },
     });
-    assert.ok(!message.includes("待补译"));
+    assert.ok(!message.includes("疑似漏译 "));
     assert.ok(!message.includes("PRIVATE"));
   }
   const inconsistent = describeJobFailure({
     ...warning,
     quality: { ...warning.quality, repaired: 2 },
   });
-  assert.ok(!inconsistent.includes("待补译"));
+  assert.ok(!inconsistent.includes("疑似漏译 "));
   const reason = describeJobFailure({
     ...warning,
     quality: { ...warning.quality, no_chinese_reply: "PRIVATE_TEXT" },
@@ -75,4 +75,15 @@ test("unknown stages and codes retain the generic safe failure message", () => {
     assert.match(message, /BabelDOC 执行失败/);
     assert.ok(!message.includes("PRIVATE"));
   }
+});
+
+test("quality-stage internal failures are reported as a retained PDF warning", () => {
+  const message = describeJobFailure({
+    schemaVersion: 1,
+    stage: "translation",
+    code: "translation_quality_failed",
+    message: "PRIVATE_DOCUMENT",
+  });
+  assert.match(message, /已跳过该步骤并尝试保留译文/);
+  assert.ok(!message.includes("PRIVATE"));
 });

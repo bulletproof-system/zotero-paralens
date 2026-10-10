@@ -14,6 +14,8 @@ export type FluentMessageId =
   | 'menuitem-submenulabel'
   | 'menupopup-label'
   | 'pref-api-key'
+  | 'pref-auto-repair'
+  | 'pref-auto-repair-note'
   | 'pref-backend'
   | 'pref-backend-install'
   | 'pref-backend-note'

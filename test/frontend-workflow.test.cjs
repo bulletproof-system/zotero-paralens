@@ -261,6 +261,7 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
       ),
     );
     assert.equal(translationQueue().snapshot().at(-1).progress.percent, 100);
+    assert.equal(globalThis.__requests[0].autoRepair, false);
     assert.equal(imported.length, 1);
     assert.equal(imported[0].parentItemID, 3);
     assert.equal(imported[0].title, "Source（ParaLens 中文译文）");
@@ -469,11 +470,16 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
       imported.push(args);
       return partialTarget;
     };
+    const originalGetPref = Zotero.Prefs.get;
+    Zotero.Prefs.get = (key) =>
+      key.endsWith(".autoRepair") ? true : originalGetPref(key);
     globalThis.__result.completion = "partial";
     globalThis.__result.warning = "仍有正文未翻译（translation_incomplete）";
     try {
       await translateSelection({ confirm: () => true }, [source]);
       const partialTask = translationQueue().snapshot().at(-1);
+      assert.equal(globalThis.__requests.at(-1).autoRepair, true);
+      assert.equal(partialTask.options.autoRepair, true);
       assert.equal(partialTask.state, "partial");
       assert.equal(partialTask.targetKey, partialTarget.key);
       assert.equal(partialTask.progress.percent, 99);
@@ -485,6 +491,7 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
       assert.equal(opened.at(-1), partialTarget.id);
     } finally {
       Zotero.Attachments.importFromFile = originalImport;
+      Zotero.Prefs.get = originalGetPref;
       delete globalThis.__result.completion;
       delete globalThis.__result.warning;
     }

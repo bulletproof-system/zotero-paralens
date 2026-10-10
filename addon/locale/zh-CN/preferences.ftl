@@ -24,3 +24,6 @@ pref-legal-notice = 版权所有：ltt 和 ParaLens 贡献者；上游作者保�
 pref-legal-source-note = 源码链接对应安装包版本。开发构建可能包含未公开的修改；旧版本可能没有源码附件，访问也取决于仓库可见性。
 pref-legal-source = 浏览对应版本源码
 pref-legal-archive = 下载 Release 源码附件
+
+pref-auto-repair = 自动补译疑似漏译段落（默认关闭）
+pref-auto-repair-note = 默认只检查漏译，不额外调用 API；疑似漏译或检查异常时仍尝试生成并保留 PDF。开启后仅影响新入队任务，每段最多补译两次，可能增加 API 费用和等待时间；补译失败不会阻止保留译文。

@@ -91,6 +91,8 @@ def load_config(path):
         raise ValueError("Remote translation API must use HTTPS")
     if url.username or url.password or url.query or url.fragment:
         raise ValueError("API URL must not contain credentials")
+    if type(data.get("autoRepair", False)) is not bool:
+        raise ValueError("Invalid automatic repair option")
     data.update(performance_options(data))
     return data, source, job
 
@@ -361,11 +363,8 @@ def _untranslated_prose(text, source=None):
     return any(_english_prose(part) for part in re.split(r"[\u3400-\u9fff]+", text or ""))
 
 
-def repair_untranslated(engine, docs, job, cancellation, source_paragraphs):
-    from babeldoc.format.pdf.document_il.midend.il_translator import ParagraphTranslateTracker
+def untranslated_paragraphs(docs, source_paragraphs):
     from babeldoc.format.pdf.document_il.utils.layout_helper import get_paragraph_unicode
-    if engine.translation_config.lang_in != "en" or engine.translation_config.lang_out != "zh":
-        return {"checked": 0, "repaired": 0, "remaining": 0}
     pending = []
     for page in docs.page:
         for paragraph in page.pdf_paragraph:
@@ -377,8 +376,34 @@ def repair_untranslated(engine, docs, job, cancellation, source_paragraphs):
             # names, or short diagram labels. Inspect actual compositions, not
             # just unicode (which may retain translator placeholder tokens).
             text = get_paragraph_unicode(paragraph) or ""
-            if _untranslated_prose(text, original):
+            if not text.strip() or _untranslated_prose(text, original):
                 pending.append((page, paragraph, saved.get("paragraph", paragraph) if isinstance(saved, dict) else paragraph))
+    return pending
+
+
+def check_untranslated(engine, docs, job, cancellation, source_paragraphs):
+    """Default quality check: no extra translation API calls or IL mutation."""
+    if cancellation.is_set() or (job / "cancel").exists():
+        raise asyncio.CancelledError()
+    atomic_json(job / "progress.json", {"stage": "检查译文漏译（不发起补译请求）", "percent": 85})
+    pending = (untranslated_paragraphs(docs, source_paragraphs)
+               if engine.translation_config.lang_in == "en" and engine.translation_config.lang_out == "zh" else [])
+    stats = {"checked": len(source_paragraphs), "pending": len(pending),
+             "repaired": 0, "remaining": len(pending), "attempts": 0, "autoRepair": False}
+    atomic_json(job / "translation-quality.json", stats)
+    if cancellation.is_set() or (job / "cancel").exists():
+        raise asyncio.CancelledError()
+    if pending:
+        raise IncompleteTranslationError("Untranslated paragraphs detected", quality=stats)
+    return stats
+
+
+def repair_untranslated(engine, docs, job, cancellation, source_paragraphs):
+    from babeldoc.format.pdf.document_il.midend.il_translator import ParagraphTranslateTracker
+    from babeldoc.format.pdf.document_il.utils.layout_helper import get_paragraph_unicode
+    if engine.translation_config.lang_in != "en" or engine.translation_config.lang_out != "zh":
+        return {"checked": 0, "repaired": 0, "remaining": 0}
+    pending = untranslated_paragraphs(docs, source_paragraphs)
     stats = {"checked": len(source_paragraphs), "pending": len(pending),
              "repaired": 0, "remaining": len(pending), "attempts": 0,
              "no_input": 0, "no_chinese_reply": 0, "incomplete_compositions": 0,
@@ -515,6 +540,7 @@ def finalize_translation(source, pdf, before, translated_il, after, job, diagnos
 async def run(data, source, job, diagnostics=None):
     diagnostics = diagnostics if diagnostics is not None else {}
     performance = performance_options(data)
+    auto_repair = data.get("autoRepair") is True
     diagnostics["stage"] = "backend_load"
     if (job / "cancel").exists():
         raise RuntimeError("Translation cancelled")
@@ -567,7 +593,8 @@ async def run(data, source, job, diagnostics=None):
         # PdfSameStyleUnicodeCharacters. Keep the original compositions for
         # substantial prose, so repairs use real source styles/formulas instead
         # of trying to pre-translate an already-mutated Unicode paragraph.
-        sources = {id(paragraph): {"text": paragraph.unicode or "", "paragraph": copy.deepcopy(paragraph)}
+        sources = {id(paragraph): {"text": paragraph.unicode or "",
+                                   **({"paragraph": copy.deepcopy(paragraph)} if auto_repair else {})}
                    for page in docs.page for paragraph in page.pdf_paragraph
                    if paragraph.layout_label in allowed and paragraph.debug_id is not None
                    and _english_prose(paragraph.unicode)}
@@ -585,27 +612,33 @@ async def run(data, source, job, diagnostics=None):
             cancellation.clear()
             return
         try:
-            repair_untranslated(engine, docs, job, cancellation, sources)
+            quality_step = repair_untranslated if auto_repair else check_untranslated
+            quality_step(engine, docs, job, cancellation, sources)
         except (Exception, asyncio.CancelledError) as error:
             if (job / "cancel").exists():
                 raise
             status = (provider_state["error"]
                       if isinstance(error, asyncio.CancelledError) and provider_state["error"]
                       else safe_job_error(error, "translation"))
-            if not (status["code"] in ("translation_incomplete", "translation_untranslated") or status["code"].startswith("api_")):
-                raise
+            # Quality checks/optional repair must never block a usable PDF.
+            # Parsing/font/IL exceptions are warnings too, not just API errors.
+            if status["code"] == "translation_failed":
+                status["code"] = "translation_quality_failed"
             partial["warning"] = status
             cancellation.clear()
             # Explicit opt-in diagnostics only in the isolated test profile.
             # Never print paragraph/prompt text or place private samples in fixtures.
             if (os.environ.get("PARALENS_TEST_RETAIN_FAILED_IL") == "1"
                     and job.resolve().is_relative_to(Path(tempfile.gettempdir()).resolve())):
-                from dataclasses import asdict
-                atomic_json(job / "failed-translation-il.json", asdict(docs))
-                atomic_json(job / "failed-source-paragraphs.json", [
-                    {"text": saved["text"], "paragraph": asdict(saved["paragraph"])}
-                    for saved in sources.values()
-                ])
+                try:
+                    from dataclasses import asdict
+                    atomic_json(job / "failed-translation-il.json", asdict(docs))
+                    atomic_json(job / "failed-source-paragraphs.json", [
+                        {"text": saved["text"], "paragraph": asdict(saved["paragraph"])}
+                        for saved in sources.values() if "paragraph" in saved
+                    ])
+                except Exception:
+                    pass  # Optional test diagnostics cannot block publishing.
             # Continue typesetting the usable translated/original paragraphs.
             # The explicit partial result prevents a false all-success status.
     ILTranslatorLLMOnly.translate = translate_with_quality

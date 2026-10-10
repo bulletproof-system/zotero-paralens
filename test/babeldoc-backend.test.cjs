@@ -45,6 +45,7 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
       ],
     },
   };
+  let expectedAutoRepair = false;
   global.Zotero = {
     Prefs: {
       get: (key) =>
@@ -61,6 +62,7 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
           assert.equal(config.apiKey, "TEST_SECRET");
           assert.equal(config.concurrency, 4);
           assert.equal(config.qps, 2);
+          assert.equal(config.autoRepair, expectedAutoRepair);
           await fs.rm(args.at(-1)); // worker consumes the one-time config
           const job = config.jobDirectory;
           await fs.writeFile(
@@ -257,6 +259,20 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
         await global.IOUtils.exists(path.join(partialJob, "config-1")),
         false,
       );
+      expectedAutoRepair = true;
+      const repairJob = await createBabelDocJobDirectory();
+      await new BabelDocBackend(project, () => ({
+        available: true,
+        path: path.join(profile, "uv.exe"),
+        message: "ok",
+      })).translate({
+        sourcePath: source,
+        jobDirectory: repairJob,
+        sourceLanguage: "en",
+        targetLanguage: "zh",
+        autoRepair: true,
+      });
+      expectedAutoRepair = false;
       for (const [diagnostic, pattern] of [
         [
           {

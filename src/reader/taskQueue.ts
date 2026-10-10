@@ -20,6 +20,7 @@ export interface JobOptions {
   concurrency?: number;
   qps?: number;
   openReader?: boolean;
+  autoRepair?: boolean;
 }
 export interface TranslationTask {
   id: string;
@@ -183,6 +184,9 @@ export class TranslationQueue {
               task.options.qps,
             ),
             openReader: task.options.openReader !== false,
+            ...(task.options.autoRepair !== undefined
+              ? { autoRepair: task.options.autoRepair === true }
+              : {}),
           },
         };
       });

@@ -119,6 +119,7 @@ function optionsFromPreferences(): JobOptions {
     ),
     sourceLanguage,
     targetLanguage,
+    autoRepair: getPref("autoRepair") === true,
     provider: selected.provider,
     model: selected.model,
     customBaseURL: selected.provider === "custom" ? selected.baseURL : "",
@@ -305,6 +306,7 @@ async function translateAttachment(
           customBaseURL: options.customBaseURL,
           concurrency: options.concurrency,
           qps: options.qps,
+          autoRepair: options.autoRepair === true,
         },
         (status) => {
           if (cancelRequested) return;

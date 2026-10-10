@@ -10,7 +10,8 @@ const errors: Record<string, string> = {
   translation_incomplete:
     "API 返回了空内容或输出被截断；请检查模型与服务输出限制",
   translation_untranslated:
-    "受限补译后仍有段落未完成；请人工核对保留译文，避免直接反复整篇重译",
+    "检查发现疑似漏译段落；译文将按部分完成保留，请人工核对",
+  translation_quality_failed: "漏译检查或补译异常；已跳过该步骤并尝试保留译文",
   api_auth: "API 鉴权失败，请检查密钥和模型访问权限",
   api_rate_limit: "API 请求被限流或额度不足，请检查服务额度后手动重新开始",
   api_connection: "无法连接 API，请检查网络和 API 地址",
@@ -67,7 +68,7 @@ export function describeJobFailure(value: unknown): string {
       remaining !== undefined &&
       repaired + remaining === pending
     ) {
-      detail = `；待补译 ${pending} 段，已修复 ${repaired} 段，剩余 ${remaining} 段`;
+      detail = `；疑似漏译 ${pending} 段，已修复 ${repaired} 段，剩余 ${remaining} 段`;
       for (const [key, label] of [
         ["no_input", "无法准备补译"],
         ["no_chinese_reply", "返回无中文"],

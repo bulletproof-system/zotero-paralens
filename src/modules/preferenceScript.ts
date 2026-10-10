@@ -53,6 +53,9 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
     "paralens-concurrency",
   ) as HTMLInputElement | null;
   const qps = doc.getElementById("paralens-qps") as HTMLInputElement | null;
+  const autoRepair = doc.getElementById(
+    "paralens-auto-repair",
+  ) as HTMLInputElement | null;
   const keyStatus = doc.getElementById("paralens-key-status");
   const saveStatus = doc.getElementById("paralens-save-status");
   if (
@@ -70,6 +73,7 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
     !keyStatus ||
     !concurrency ||
     !qps ||
+    !autoRepair ||
     !saveStatus
   )
     return;
@@ -116,6 +120,7 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
   }
   concurrency.value = String(performance.concurrency);
   qps.value = String(performance.qps);
+  autoRepair.checked = getPref("autoRepair") === true;
   sourceLanguage.value = getPref("sourceLanguage") || "en";
   targetLanguage.value = getPref("targetLanguage") || "zh";
 
@@ -315,6 +320,7 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
       setPref("backend", backend.id);
       setPref("translationConcurrency", performance.concurrency);
       setPref("translationQps", performance.qps);
+      setPref("autoRepair", autoRepair.checked);
       setPref("sourceLanguage", sourceLanguage.value);
       setPref("targetLanguage", targetLanguage.value);
       setPref("model", selected.model);

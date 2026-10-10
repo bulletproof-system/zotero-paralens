@@ -117,6 +117,11 @@ describe("ParaLens uv startup", function () {
             String(getPref("translationConcurrency")),
           );
           assert.equal(qps.value, String(getPref("translationQps")));
+          const autoRepair = win!.document.getElementById(
+            "paralens-auto-repair",
+          ) as HTMLInputElement;
+          assert.isNotNull(autoRepair);
+          assert.equal(autoRepair.checked, getPref("autoRepair") === true);
           assert.equal(concurrency.max, "16");
           assert.equal(qps.max, "10");
           assert.equal(backend.value, "babeldoc");
@@ -163,7 +168,11 @@ describe("ParaLens uv startup", function () {
   });
 
   it("rejects invalid performance settings and persists independent concurrency and QPS", async function () {
-    const old = [getPref("translationConcurrency"), getPref("translationQps")];
+    const old = [
+      getPref("translationConcurrency"),
+      getPref("translationQps"),
+    ] as const;
+    const oldAutoRepair = getPref("autoRepair");
     const pane = Zotero.PreferencePanes.pluginPanes.find(
       (p) => p.pluginID === config.addonID,
     );
@@ -191,6 +200,11 @@ describe("ParaLens uv startup", function () {
         await Zotero.Promise.delay(100);
       assert.match(status.textContent || "", /整数/);
       assert.equal(getPref("translationConcurrency"), old[0]);
+      const autoRepair = win.document.getElementById(
+        "paralens-auto-repair",
+      ) as HTMLInputElement;
+      assert.isFalse(autoRepair.checked, "Automatic repair defaults to off");
+      autoRepair.checked = true;
       concurrency!.value = "6";
       qps.value = "3";
       save.click();
@@ -203,10 +217,22 @@ describe("ParaLens uv startup", function () {
       assert.match(status.textContent || "", /Settings saved|设置已保存/);
       assert.equal(getPref("translationConcurrency"), 6);
       assert.equal(getPref("translationQps"), 3);
+      assert.isTrue(getPref("autoRepair"));
+      autoRepair.checked = false;
+      status.textContent = "";
+      save.click();
+      for (
+        let i = 0;
+        i < 30 && !/Settings saved|设置已保存/.test(status.textContent || "");
+        i++
+      )
+        await Zotero.Promise.delay(100);
+      assert.isFalse(getPref("autoRepair"));
     } finally {
       win.close();
       setPref("translationConcurrency", old[0]);
       setPref("translationQps", old[1]);
+      setPref("autoRepair", oldAutoRepair);
     }
   });
 

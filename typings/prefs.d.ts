@@ -17,6 +17,7 @@ declare namespace _ZoteroTypes {
       "syncScroll": boolean;
       "translationConcurrency": number;
       "translationQps": number;
+      "autoRepair": boolean;
     };
   }
 }

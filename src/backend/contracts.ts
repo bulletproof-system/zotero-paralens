@@ -11,6 +11,8 @@ export interface TranslationJobRequest {
   customBaseURL?: string;
   concurrency?: number;
   qps?: number;
+  /** Extra billable repair requests, opt-in only; absent means check-only. */
+  autoRepair?: boolean;
 }
 
 export interface TranslationJobProgress {

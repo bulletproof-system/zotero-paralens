@@ -24,3 +24,6 @@ pref-legal-notice = Copyright ltt and ParaLens contributors; upstream authors re
 pref-legal-source-note = Source links match the package version. Development builds may include unpublished changes; old releases may lack a source attachment. Access also depends on the repository visibility.
 pref-legal-source = Browse versioned source
 pref-legal-archive = Download release source archive
+
+pref-auto-repair = Automatically repair suspected untranslated paragraphs (off by default)
+pref-auto-repair-note = By default, only check for untranslated text without extra API calls; suspected omissions or check errors do not prevent attempting to retain the PDF. Enable only for new queued jobs: at most two repair attempts per paragraph, with extra API costs and waiting time. Failed repairs do not block retaining the translation.

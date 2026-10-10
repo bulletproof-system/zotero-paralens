@@ -13,7 +13,7 @@ import worker
 
 
 class PartialWorkerTests(unittest.TestCase):
-    def run_scenario(self, scenario):
+    def run_scenario(self, scenario, auto_repair=True):
         import pymupdf
         # Fresh classes for every job: the pinned worker hooks class methods.
         with tempfile.TemporaryDirectory() as folder:
@@ -109,11 +109,14 @@ class PartialWorkerTests(unittest.TestCase):
             }
             data = {"apiKey": "PRIVATE_KEY", "baseURL": "https://example.invalid/v1",
                     "model": "test-only", "sourceLanguage": "en", "targetLanguage": "zh"}
+            if auto_repair:
+                data["autoRepair"] = True
             with patch.dict(sys.modules, modules), \
-                 patch.object(worker, "repair_untranslated", side_effect=repair), \
+                 patch.object(worker, "repair_untranslated", side_effect=repair) as repair_mock, \
+                 patch.object(worker, "check_untranslated", side_effect=repair) as check_mock, \
                  patch.object(worker, "make_mapping", side_effect=worker.MappingUnavailableError("PRIVATE_DOCUMENT")):
-                if scenario in ("cancel", "internal", "all_failed"):
-                    expected = {"cancel": asyncio.CancelledError, "internal": ValueError,
+                if scenario in ("cancel", "all_failed"):
+                    expected = {"cancel": asyncio.CancelledError,
                                 "all_failed": worker.ProviderJobError}[scenario]
                     with self.assertRaises(expected):
                         asyncio.run(worker.run(data, source, job))
@@ -128,10 +131,17 @@ class PartialWorkerTests(unittest.TestCase):
                         self.assertFalse((job / "artifact-retention.json").exists())
                     else:
                         self.assertEqual(result["completion"], "partial")
-                        code = "translation_untranslated" if scenario == "quality" else "api_auth"
+                        code = ("translation_untranslated" if scenario == "quality" else
+                                "translation_quality_failed" if scenario == "internal" else "api_auth")
                         self.assertEqual(result["warning"]["code"], code)
                         self.assertNotIn("PRIVATE", json.dumps(result))
                         self.assertTrue((job / "partial-warning.json").exists())
+                if scenario in ("initial_api", "all_failed"):
+                    self.assertEqual(repair_mock.call_count, 0)
+                    self.assertEqual(check_mock.call_count, 0)
+                else:
+                    self.assertEqual(repair_mock.call_count, int(auto_repair))
+                    self.assertEqual(check_mock.call_count, int(not auto_repair))
                 retained = scenario != "success"
                 self.assertEqual((job / "artifact-retention.json").exists(), retained)
                 self.assertEqual(any(p.name.startswith("output-") for p in job.iterdir()), retained)
@@ -143,9 +153,15 @@ class PartialWorkerTests(unittest.TestCase):
         for scenario in ("quality", "initial_api", "repair_api", "success"):
             with self.subTest(scenario=scenario): self.run_scenario(scenario)
 
-    def test_cancel_internal_error_and_total_api_failure_are_not_published(self):
-        for scenario in ("cancel", "internal", "all_failed"):
+    def test_cancel_and_total_api_failure_are_not_published(self):
+        for scenario in ("cancel", "all_failed"):
             with self.subTest(scenario=scenario): self.run_scenario(scenario)
+
+    def test_check_only_default_and_opt_in_internal_errors_keep_pdf(self):
+        for auto_repair in (False, True):
+            for scenario in ("quality", "internal", "success", "cancel"):
+                with self.subTest(auto_repair=auto_repair, scenario=scenario):
+                    self.run_scenario(scenario, auto_repair=auto_repair)
 
 
 if __name__ == "__main__": unittest.main()

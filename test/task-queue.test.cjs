@@ -543,3 +543,31 @@ test("partial results retain a safe target attachment key across restore, never 
   assert.equal(queue.snapshot().length, 1);
   assert.equal(queue.snapshot()[0].id, ids[0]);
 });
+
+test("automatic repair is opt-in per task and survives restore/restart without enabling legacy jobs", async () => {
+  const disk = storage();
+  const executed = [];
+  const queue = new TranslationQueue(disk, async (task) =>
+    executed.push(task.options.autoRepair === true),
+  );
+  await queue.enqueue([
+    input("AAAA1111"),
+    { ...input("BBBB2222"), options: { ...options, autoRepair: true } },
+  ]);
+  await queue.waitForIdle();
+  assert.deepEqual(executed, [false, true]);
+  const restored = new TranslationQueue(storage(disk.value), async (task) =>
+    executed.push(task.options.autoRepair === true),
+  );
+  await restored.initialize();
+  assert.equal(restored.snapshot()[0].options.autoRepair === true, false);
+  assert.equal(restored.snapshot()[1].options.autoRepair, true);
+  await restored.restart(restored.snapshot()[0].id);
+  await restored.waitForIdle();
+  assert.equal(executed.at(-1), false);
+  await restored.restart(
+    restored.snapshot().find((task) => task.sourceKey === "BBBB2222").id,
+  );
+  await restored.waitForIdle();
+  assert.equal(executed.at(-1), true);
+});

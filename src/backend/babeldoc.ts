@@ -106,6 +106,7 @@ export class BabelDocBackend implements TranslationBackend {
         model: selected.model,
         baseURL: selected.baseURL,
         apiKey,
+        autoRepair: request.autoRepair === true,
         ...performance,
       });
       // Cancel before spawning any worker if the UI requested it during setup.
