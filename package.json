@@ -37,21 +37,21 @@
     "test:gui:isolated": "node scripts/gui-smoke-isolated.mjs"
   },
   "dependencies": {
-    "zotero-plugin-toolkit": "^5.2.0"
+    "zotero-plugin-toolkit": "^6.0.0"
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^24.19.0",
+    "@types/node": "^26.6.5",
     "@zotero-plugin/eslint-config": "^0.6.10",
-    "chai": "^6.2.2",
-    "adm-zip": "^0.5.18",
-    "eslint": "^9.39.5",
-    "globals": "^14.0.0",
-    "mocha": "^11.8.0",
+    "adm-zip": "^0.6.1",
+    "chai": "^6.3.0",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
+    "mocha": "^12.0.3",
     "prettier": "^3.9.9",
-    "typescript": "^5.9.3",
-    "zotero-plugin-scaffold": "^0.8.8",
+    "typescript": "~6.0.3",
+    "zotero-plugin-scaffold": "^0.9.2",
     "zotero-types": "^4.1.3"
   },
   "prettier": {
@@ -68,5 +68,8 @@
         }
       }
     ]
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

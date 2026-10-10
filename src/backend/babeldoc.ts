@@ -37,7 +37,7 @@ export class TranslationCancelledError extends Error {
  * No download/sync or external service starts implicitly. */
 export class BabelDocBackend implements TranslationBackend {
   readonly id = "babeldoc";
-  readonly version = "0.5.20";
+  readonly version = "0.6.4";
   private job?: string;
   private cancelRequested = false;
 

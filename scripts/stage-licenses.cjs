@@ -41,7 +41,7 @@ copy(
   path.join(out, "docs/source-distribution.md"),
 );
 for (const file of [
-  "BabelDOC-0.5.20-LICENSE.txt",
+  "BabelDOC-0.6.4-LICENSE.txt",
   "zotero-plugin-toolkit-LICENSE.txt",
 ])
   copy(path.join(root, "licenses", file), path.join(out, "licenses", file));
@@ -49,7 +49,7 @@ for (const file of [
 for (const file of ["LICENSE.txt", "THIRD_PARTY_NOTICES.md"])
   copy(path.join(out, file), path.join(out, "content/licenses", file));
 for (const file of [
-  "BabelDOC-0.5.20-LICENSE.txt",
+  "BabelDOC-0.6.4-LICENSE.txt",
   "zotero-plugin-toolkit-LICENSE.txt",
 ])
   copy(
@@ -84,10 +84,10 @@ const metadata = {
   installedSeparately: [
     {
       name: "babeldoc",
-      version: "0.5.20",
+      version: "0.6.4",
       license: "AGPL-3.0 (upstream declaration)",
-      source: "https://github.com/funstory-ai/BabelDOC/tree/v0.5.20",
-      licenseFile: "licenses/BabelDOC-0.5.20-LICENSE.txt",
+      source: "https://github.com/funstory-ai/BabelDOC/tree/v0.6.4",
+      licenseFile: "licenses/BabelDOC-0.6.4-LICENSE.txt",
     },
   ],
   limitations:

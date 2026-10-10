@@ -2,7 +2,7 @@
 name = "paralens-worker"
 version = "0.0.0"
 requires-python = ">=3.12,<3.13"
-dependencies = ["babeldoc==0.5.20"]
+dependencies = ["babeldoc==0.6.4"]
 
 [tool.uv]
 package = false

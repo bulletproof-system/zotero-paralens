@@ -18,7 +18,7 @@ relicense it or certify the entire dependency chain.
   version is recorded in `package-lock.json`. Build staging copies the installed
   library's unmodified LICENSE and records its actual version in
   `content/licenses/DEPENDENCIES.json` inside the XPI.
-- The checked-in license snapshot corresponds to toolkit 5.2.0. When upgrading,
+- The checked-in license snapshot corresponds to toolkit 6.0.0. When upgrading,
   review its license, update that snapshot, and review newly bundled dependencies.
 
 The XPI also includes ParaLens's Python worker and mapping adapter, their editable
@@ -27,15 +27,15 @@ ParaLens files are covered by the project's AGPL license.
 
 ## Installed separately on the user's explicit request
 
-### BabelDOC 0.5.20
+### BabelDOC 0.6.4
 
 - Upstream: https://github.com/funstory-ai/BabelDOC
-- Versioned source: https://github.com/funstory-ai/BabelDOC/tree/v0.5.20
-- Source archive: https://github.com/funstory-ai/BabelDOC/archive/refs/tags/v0.5.20.tar.gz
+- Versioned source: https://github.com/funstory-ai/BabelDOC/tree/v0.6.4
+- Source archive: https://github.com/funstory-ai/BabelDOC/archive/refs/tags/v0.6.4.tar.gz
 - Upstream metadata declares **AGPL-3.0**; do not reinterpret it as an
   unrestricted MIT license or add an upstream `-or-later` grant.
 - Exact upstream license snapshot:
-  [licenses/BabelDOC-0.5.20-LICENSE.txt](licenses/BabelDOC-0.5.20-LICENSE.txt).
+  [licenses/BabelDOC-0.6.4-LICENSE.txt](licenses/BabelDOC-0.6.4-LICENSE.txt).
 - ParaLens imports BabelDOC in a local Python worker. It does not include a
   BabelDOC wheel, source tree, virtual environment, model or font in the XPI.
   Clicking Install runs `uv sync`; no installation happens merely on startup.

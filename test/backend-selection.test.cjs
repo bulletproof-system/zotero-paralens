@@ -66,7 +66,7 @@ test("install button only hides for a runnable venv with the pinned BabelDOC ver
   assert.equal(calls.length, 1);
   assert.equal(calls[0].binary, winPython);
   assert.equal(calls[0].args[0], "-c");
-  assert.match(calls[0].args[1], /babeldoc.*0\.5\.20/);
+  assert.match(calls[0].args[1], /babeldoc.*0\.6\.4/);
   assert(!calls[0].args.join(" ").includes("API_KEY"));
   present.delete(winPython);
   assert.equal(await isBackendInstalled(project, true, exists, execute), false);

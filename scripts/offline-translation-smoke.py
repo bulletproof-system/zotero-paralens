@@ -53,7 +53,7 @@ def main():
     pdf.close()
 
     from babeldoc.translator.translator import OpenAITranslator
-    # BabelDOC 0.5.20 has both paragraph and batch/LLM translation paths.
+    # BabelDOC 0.6.4 has both paragraph and batch/LLM translation paths.
     OpenAITranslator.do_translate = lambda self, text, rate_limit_params=None: "河流缓缓流淌。水很清澈。"
     OpenAITranslator.do_llm_translate = fake_llm
     job = test_dir / "job"

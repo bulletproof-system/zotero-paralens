@@ -35,7 +35,8 @@ describe("live translation queue progress", function () {
       }
       throw Error("Queue UI condition timed out");
     };
-    const parent = Zotero.getMainWindow() as Window & {
+    // Headless Linux CI may only have the scaffold runner window.
+    const parent = (Zotero.getMainWindow() || window) as Window & {
       openDialog: (...args: unknown[]) => Window;
     };
     const host = {

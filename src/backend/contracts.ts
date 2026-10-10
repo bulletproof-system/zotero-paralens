@@ -47,5 +47,5 @@ export interface TranslationBackend {
  */
 export const defaultBackend = {
   id: "babeldoc",
-  version: "0.5.20",
+  version: "0.6.4",
 } as const;

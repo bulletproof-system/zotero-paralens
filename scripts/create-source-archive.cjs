@@ -37,7 +37,7 @@ for (const file of [
   "THIRD_PARTY_NOTICES.md",
   "docs/source-distribution.md",
   "licenses/zotero-plugin-toolkit-LICENSE.txt",
-  "licenses/BabelDOC-0.5.20-LICENSE.txt",
+  "licenses/BabelDOC-0.6.4-LICENSE.txt",
 ])
   if (!files.includes(file))
     throw new Error("Required source material is not committed: " + file);

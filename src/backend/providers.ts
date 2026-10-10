@@ -8,7 +8,7 @@ export interface ProviderPreset {
   suggestedModel: string;
 }
 
-/** All presets use BabelDOC 0.5.20's OpenAI-compatible Chat Completions client. */
+/** All presets use BabelDOC 0.6.4's OpenAI-compatible Chat Completions client. */
 export const PROVIDERS: readonly ProviderPreset[] = [
   {
     id: "openai",

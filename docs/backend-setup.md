@@ -4,7 +4,7 @@
 
 插件启动时会查找自定义绝对路径、进程 `PATH` 及 uv 常见安装目录，并以参数数组执行 `uv --version` 验证。找不到 uv 时**只禁用翻译**，仍允许打开设置页、修正路径并重新检测；不因缺少 uv 导致整个插件无法加载。本机 uv 可运行；Zotero 10.0.3 隔离测试已验证后端安装、PDF 翻译与双向悬停，真实 API 试译结果见下文。
 
-后端项目 `backend/pyproject.toml` 固定 Python 3.12 与 `babeldoc==0.5.20`。用户明确授权首次联网安装后，可在任何工作目录执行（将占位符换成设置页显示的绝对路径）：
+后端项目 `backend/pyproject.toml` 固定 Python 3.12 与 `babeldoc==0.6.4`。用户明确授权首次联网安装后，可在任何工作目录执行（将占位符换成设置页显示的绝对路径）：
 
 ```sh
 uv sync --project "<Zotero profile>/paralens/backend" --python 3.12
@@ -14,7 +14,7 @@ uv sync --project "<Zotero profile>/paralens/backend" --python 3.12
 
 翻译进行时可从 PDF 附件右键菜单选择「ParaLens：取消正在运行的翻译」。取消为协作式：插件写入取消标记并等待 worker 退出，不导入已取消作业的结果，也不覆盖已有映射；正在处理的 API 请求不一定能立即中止，已发送的请求仍可能计费。取消入口仅在作业可取消时出现，导入译文阶段不提供取消。
 
-设置页的「翻译后端」当前仅列出已实现的 BabelDOC；通过虚拟环境中的 Python 检查 `babeldoc==0.5.20` 是否真实可用，而非仅检查 `.venv` 是否存在。未安装或安装不完整时显示「安装后端」，点击后使用已检测到的 uv 执行同一 `uv sync` 命令（可能联网下载 Python 与依赖），安装中会禁用重复点击。npm 用于构建 Zotero 插件，不能替代 Python 后端所需的 uv。安装会在该 Zotero profile 的 `paralens/backend/.venv/` 生成虚拟环境；开发仓库的 `backend/.venv/` 被 Git 忽略。插件启动只将 XPI 内固定的三个脚本/配置文件部署到 `PathUtils.profileDir/paralens/backend/`，设置页显示实际目录。**插件启动、打开设置页与作业运行都不自动执行 `uv sync`**，以免用户不知情时联网下载依赖、模型或字体。`runUVWorker` 只接受绝对路径、可信后端目录下的 worker 脚本、作业配置文件路径；运行命令是：
+设置页的「翻译后端」当前仅列出已实现的 BabelDOC；通过虚拟环境中的 Python 检查 `babeldoc==0.6.4` 是否真实可用，而非仅检查 `.venv` 是否存在。未安装或安装不完整时显示「安装后端」，点击后使用已检测到的 uv 执行同一 `uv sync` 命令（可能联网下载 Python 与依赖），安装中会禁用重复点击。npm 用于构建 Zotero 插件，不能替代 Python 后端所需的 uv。安装会在该 Zotero profile 的 `paralens/backend/.venv/` 生成虚拟环境；开发仓库的 `backend/.venv/` 被 Git 忽略。插件启动只将 XPI 内固定的三个脚本/配置文件部署到 `PathUtils.profileDir/paralens/backend/`，设置页显示实际目录。**插件启动、打开设置页与作业运行都不自动执行 `uv sync`**，以免用户不知情时联网下载依赖、模型或字体。`runUVWorker` 只接受绝对路径、可信后端目录下的 worker 脚本、作业配置文件路径；运行命令是：
 
 ```text
 uv run --project <backend> --no-sync --offline python <backend/worker.py> <job-config-path>
@@ -30,7 +30,7 @@ uv run --project <backend> --no-sync --offline python <backend/worker.py> <job-c
 
 ## 翻译 API：不必一开始就引入巨型依赖
 
-调查结果：BabelDOC **0.5.20** 内置 `OpenAITranslator`，支持配置 `model`、`base_url`、`api_key`；当前固定版本的 CLI 翻译服务入口主要是 `--openai`。因此先通过预设接 OpenAI、OpenRouter、DeepSeek，再用“自定义 OpenAI 兼容接口”接其他厂商或用户已有的 LiteLLM 网关，避免为每个提供商分别写 SDK。DeepSeek 预设使用官方当前推荐的 `deepseek-flash`，不使用已退役的 `deepseek-v4-flash` 别名。
+调查结果：BabelDOC **0.6.4** 内置 `OpenAITranslator`，支持配置 `model`、`base_url`、`api_key`；当前固定版本的 CLI 翻译服务入口主要是 `--openai`。因此先通过预设接 OpenAI、OpenRouter、DeepSeek，再用“自定义 OpenAI 兼容接口”接其他厂商或用户已有的 LiteLLM 网关，避免为每个提供商分别写 SDK。DeepSeek 预设使用官方当前推荐的 `deepseek-flash`，不使用已退役的 `deepseek-v4-flash` 别名。
 
 | 路线                            | 覆盖范围                                                    | 用户需要配置                                             | 本阶段取舍                                           |
 | ------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------- |
@@ -48,11 +48,11 @@ uv run --project <backend> --no-sync --offline python <backend/worker.py> <job-c
 - 插件已从 Gecko 凭据管理器读取密钥，写入受限权限的一次性作业配置文件；worker 在加载模型和网络调用前删除该文件，插件在作业退出后也执行清理。密钥不进入命令行、普通状态、日志或映射。取消通过作业标记在后端进度回调生效，网络调用中未必即时中断。
 - 本项目计划覆盖 Zotero 7–10，但当前凭据和启动流程只在 10.0.3 做了实机验证；其余版本仍需测试。
 
-参考原始资料：uv 官方 [项目运行](https://docs.astral.sh/uv/concepts/projects/run/) 与 [锁定/同步](https://docs.astral.sh/uv/concepts/projects/sync/)；[BabelDOC v0.5.20 翻译器](https://github.com/funstory-ai/BabelDOC/blob/v0.5.20/babeldoc/translator/translator.py)；[LiteLLM 官方文档](https://docs.litellm.ai/docs/)；[OpenRouter 文档](https://openrouter.ai/docs/quickstart)；[DeepSeek API 文档](https://api-docs.deepseek.com/)。
+参考原始资料：uv 官方 [项目运行](https://docs.astral.sh/uv/concepts/projects/run/) 与 [锁定/同步](https://docs.astral.sh/uv/concepts/projects/sync/)；[BabelDOC v0.6.4 翻译器](https://github.com/funstory-ai/BabelDOC/blob/v0.6.4/babeldoc/translator/translator.py)；[LiteLLM 官方文档](https://docs.litellm.ai/docs/)；[OpenRouter 文档](https://openrouter.ai/docs/quickstart)；[DeepSeek API 文档](https://api-docs.deepseek.com/)。
 
 ## Zotero 原生 Reader 隔离回归（不调用已保存 API Key）
 
-`npm test` 的上游脚手架会清空其工作目录下 `.scaffold/test/`，不可直接用共享仓库或真实 Zotero profile 验收。先在 PowerShell 指定**已经安装 BabelDOC 0.5.20** 的 uv 虚拟环境（仅复用 Python 依赖），再运行：
+`npm test` 的上游脚手架会清空其工作目录下 `.scaffold/test/`，不可直接用共享仓库或真实 Zotero profile 验收。先在 PowerShell 指定**已经安装 BabelDOC 0.6.4** 的 uv 虚拟环境（仅复用 Python 依赖），再运行：
 
 ```powershell
 $env:PARALENS_TEST_VENV = 'C:\path\to\Zotero\Profiles\test-profile\paralens\backend\.venv'
@@ -123,7 +123,7 @@ node scripts/gui-smoke-isolated.mjs --replay-complex
 ## 取消历史删除与译文完整性
 
 - 任务进入「已取消」状态后可以删除队列记录。运行中、排队中和已完成的任务不允许通过该按钮删除；磁盘保存失败时保留原记录。删除操作不删除原文、译文或映射附件，不发起翻译请求，重启后不会恢复已删除记录。
-- BabelDOC 0.5.20 的原生 LLM 请求预算为 2048 tokens。本插件将预算至少提升到 8192；对空白/null 或截断输出仅追加一次更大预算（至少 16384）的尝试。该预算是输出上限，不是承诺实际用量；推理模型的内部推理可能占用预算。重试和补译都可能产生额外 API 费用，取消不能撤回已发送的请求。
+- BabelDOC 0.6.4 的原生 LLM 请求预算为 2048 tokens。本插件将预算至少提升到 8192；对空白/null 或截断输出仅追加一次更大预算（至少 16384）的尝试。该预算是输出上限，不是承诺实际用量；推理模型的内部推理可能占用预算。重试和补译都可能产生额外 API 费用，取消不能撤回已发送的请求。
 - 对官方支持双模式的 DeepSeek 型号（如 `deepseek-flash`、`deepseek-v4-pro`），翻译请求显式设置 `thinking.type=disabled`，避免默认高强度思考占用输出预算；不向其他型号发送这个特有参数，也不覆盖显式思考配置。模式依据 DeepSeek 官方 Thinking Mode 文档。
 - 英文→中文时，对正文和图表说明中的长英文残留进行补译，既检查完全未译的段落，也检查少量中文夹着长英文的段落。补译保留翻译前的正文结构，复用 BabelDOC 原有公式/样式占位符流程，避免将已转成译文 Unicode 的段落误当作不可翻译的调试文字；短名称、引用、缩写和公式不因为含有英文就被强制补译。补译仍不完整时报告 `translation_incomplete`，不将原文 fallback 当作成功译文。该检查不是语义正确性或所有语言质量的保证。 对连续编号的参考文献，逐条检查中文标题/说明；作者、出版场所和标识符保留原拼写，不将长作者列表当作未译正文。未译条目、编号缺失或混杂真实英文正文仍不能通过。
 - 对照坐标优先逐字符核验 IL 的字符内容及位置，绘制的 quads 必须来自实际 PDF 文本层。完整文本回退也必须核验唯一匹配；不使用整段包围盒、文字前缀或段落序号硬配。无法核验的段落保留为 uncertain，不伪造可高亮坐标。
@@ -147,3 +147,9 @@ ParaLens 设置页新增「翻译并发数」（1–16）和「每秒最多发�
 另外为源/译 PDF 中全篇唯一且 decoded-image digest 相同的栅格图片增加图片级区域映射。其四边形来自 PDF 实际图片 transform，支持 CropBox 和旋转；文字命中优先于包含它的图片区域；嵌套图片优先命中较小的实际区域，避免大图遮住图内小图。不能用整图高亮冒充文字逐段对齐。重复图片/图标、内容已改变的栅格、裁剪越界区域和无法核验的文字不强行配对；纯矢量图、扫描图片内无独立文本层的译文仍不保证支持。
 
 既有译文和映射不会自动更新。重新翻译会生成新版映射；拥有原始 BabelDOC IL 的开发者也可离线重建映射，但这不会修复译文内容，也不发起 API 调用。
+
+## 依赖升级说明
+
+当前 BabelDOC 固定为 0.6.4。升级插件只部署后端脚本与依赖声明，不会静默更新已有 `.venv`；旧版后端会显示版本不匹配，需在 ParaLens 设置中显式点击「安装后端」完成依赖更新（可能联网下载），随后再翻译。
+
+前端依赖按最新发布版本更新；TypeScript 使用 `~6.0.3`，因为当前 typescript-eslint 解析器的支持范围是 `<6.1.0`，暂不升级到 TypeScript 7。

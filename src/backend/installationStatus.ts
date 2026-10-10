@@ -19,7 +19,7 @@ export async function isBackendInstalled(
       return false;
     return await execute(python, [
       "-c",
-      "from importlib.metadata import version; assert version('babeldoc') == '0.5.20'",
+      "from importlib.metadata import version; assert version('babeldoc') == '0.6.4'",
     ]);
   } catch {
     return false;

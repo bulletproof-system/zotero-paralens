@@ -1,4 +1,4 @@
-"""BabelDOC 0.5.20 debug IL -> unbound mapping.v1.
+"""BabelDOC 0.6.4 debug IL -> unbound mapping.v1.
 
 Only emit clickable quads when both IL identity and exact PDF text placement agree.
 BabelDOC IL is not a public alignment API; ambiguous records remain uncertain.
@@ -411,7 +411,7 @@ def unavailable_mapping(source_path, translated_path):
             "target": {"sha256": digest(translated_path), "pageCount": len(target)},
             "segments": [{"id": "mapping-unavailable", "level": "paragraph", "status": "failed",
                           "source": [], "target": [], "metadata": {"scope": "document", "reason": "mapping_unavailable"}}],
-            "provenance": {"backend": "babeldoc", "backendVersion": "0.5.20", "adapterVersion": "1",
+            "provenance": {"backend": "babeldoc", "backendVersion": "0.6.4", "adapterVersion": "1",
                            "createdAt": datetime.now(timezone.utc).isoformat(),
                            "sourceFormat": "Alignment unavailable; no inferred geometry"},
         }
@@ -494,7 +494,7 @@ def make_mapping(source_path, translated_path, before_path, translated_il_path, 
             "target": {"sha256": digest(translated_path), "pageCount": len(target)},
             "segments": segments,
             "provenance": {
-                "backend": "babeldoc", "backendVersion": "0.5.20",
+                "backend": "babeldoc", "backendVersion": "0.6.4",
                 "adapterVersion": "3", "createdAt": datetime.now(timezone.utc).isoformat(),
                 "sourceFormat": "BabelDOC IL glyph identity and unique raster identity verified against actual PDF geometry",
             },

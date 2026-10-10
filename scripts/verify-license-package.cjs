@@ -16,8 +16,8 @@ const required = [
     "licenses/zotero-plugin-toolkit-LICENSE.txt",
   ],
   [
-    "licenses/BabelDOC-0.5.20-LICENSE.txt",
-    "licenses/BabelDOC-0.5.20-LICENSE.txt",
+    "licenses/BabelDOC-0.6.4-LICENSE.txt",
+    "licenses/BabelDOC-0.6.4-LICENSE.txt",
   ],
   ["content/licenses/LICENSE.txt", "LICENSE"],
   ["content/licenses/THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"],
@@ -26,8 +26,8 @@ const required = [
     "licenses/zotero-plugin-toolkit-LICENSE.txt",
   ],
   [
-    "content/licenses/BabelDOC-0.5.20-LICENSE.txt",
-    "licenses/BabelDOC-0.5.20-LICENSE.txt",
+    "content/licenses/BabelDOC-0.6.4-LICENSE.txt",
+    "licenses/BabelDOC-0.6.4-LICENSE.txt",
   ],
 ];
 for (const [entry, source] of required) {

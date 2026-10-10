@@ -1,4 +1,4 @@
-"""Single-job BabelDOC v0.5.20 worker. Run via uv in backend/.venv.
+"""Single-job BabelDOC v0.6.4 worker. Run via uv in backend/.venv.
 
 The config path is the sole CLI argument. No API credentials in argv/status/logs.
 """
@@ -272,7 +272,7 @@ def guard_api_response(translator, cancellation, performance=None):
 
     def complete(*args, **kwargs):
         kwargs = translation_api_options(kwargs)
-        # BabelDOC 0.5.20 caps LLM requests at 2048 tokens. Reasoning gateways
+        # BabelDOC 0.6.4 caps LLM requests at 2048 tokens. Reasoning gateways
         # may consume that budget before emitting content. Retry once with a
         # larger budget; empty/truncated output must never become original prose.
         requested = kwargs.get("max_tokens", 0) or 0
@@ -529,7 +529,7 @@ async def run(data, source, job, diagnostics=None):
     from babeldoc.format.pdf.document_il.midend.il_translator_llm_only import ILTranslatorLLMOnly
 
     # Keep IL snapshots for alignment, but do not draw debugging boxes/text
-    # into the PDF delivered to the user. This hook is pinned to BabelDOC 0.5.20.
+    # into the PDF delivered to the user. This hook is pinned to BabelDOC 0.6.4.
     AddDebugInformation.process = lambda self, docs: None
 
     def is_debug_paragraph(paragraph):
@@ -542,7 +542,7 @@ async def run(data, source, job, diagnostics=None):
 
     original_write = PDFCreater.write
 
-    def write_without_debug_overlay(creater, translation_config):
+    def write_without_debug_overlay(creater, translation_config, *args, **kwargs):
         # Layout label helpers insert debug-only character paragraphs even
         # before AddDebugInformation.process. Do not publish those overlays.
         for page in creater.docs.page:
@@ -553,7 +553,7 @@ async def run(data, source, job, diagnostics=None):
         was_debug = translation_config.debug
         translation_config.debug = False
         try:
-            return original_write(creater, translation_config)
+            return original_write(creater, translation_config, *args, **kwargs)
         finally:
             translation_config.debug = was_debug
 
@@ -641,9 +641,8 @@ async def run(data, source, job, diagnostics=None):
             pool_max_workers=performance["concurrency"],
         )
         getattr(layout, "init_font_mapper", lambda _config: None)(config)
-        # BabelDOC 0.5.20 async_translate can leave its completion event unset
-        # on Windows after saving a PDF. The pinned synchronous API returns the
-        # same TranslateResult without relying on that event/queue handshake.
+        # Use the pinned synchronous API, avoiding the async event/queue
+        # handshake that previously stalled on Windows with BabelDOC 0.5.20.
         def on_progress(**event):
             if (job / "cancel").exists():
                 cancellation.set()

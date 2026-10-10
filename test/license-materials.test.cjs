@@ -56,7 +56,7 @@ function tempRepo(t) {
     "THIRD_PARTY_NOTICES.md",
     "docs/source-distribution.md",
     "licenses/zotero-plugin-toolkit-LICENSE.txt",
-    "licenses/BabelDOC-0.5.20-LICENSE.txt",
+    "licenses/BabelDOC-0.6.4-LICENSE.txt",
     "scripts/create-source-archive.cjs",
   ])
     write(file, fs.readFileSync(path.join(root, file)));
@@ -110,8 +110,8 @@ test("staged license files preserve full texts and actual bundled versions", () 
       "licenses/zotero-plugin-toolkit-LICENSE.txt",
     ],
     [
-      "addon/licenses/BabelDOC-0.5.20-LICENSE.txt",
-      "licenses/BabelDOC-0.5.20-LICENSE.txt",
+      "addon/licenses/BabelDOC-0.6.4-LICENSE.txt",
+      "licenses/BabelDOC-0.6.4-LICENSE.txt",
     ],
     ["addon/content/licenses/LICENSE.txt", "LICENSE"],
   ])
@@ -130,7 +130,7 @@ test("staged license files preserve full texts and actual bundled versions", () 
     metadata.bundled[0].version,
     require("zotero-plugin-toolkit/package.json").version,
   );
-  assert.equal(metadata.installedSeparately[0].version, "0.5.20");
+  assert.equal(metadata.installedSeparately[0].version, "0.6.4");
   assert.match(metadata.limitations, /not a complete audited inventory/);
 });
 

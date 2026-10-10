@@ -13,7 +13,9 @@ describe("batch queue and paired native Reader product workflow", function () {
     const port = Services.env.get("PARALENS_MOCK_API_PORT"),
       pdf = Services.env.get("PARALENS_TEST_SOURCE_PDF");
     if (!port || !pdf) this.skip();
-    this.timeout(180000);
+    // Two real local backend jobs plus Reader interaction can exceed 3 minutes
+    // on a cold Windows environment; keep a finite end-to-end test bound.
+    this.timeout(360000);
     const win = Zotero.getMainWindow() as Window & {
       openDialog: (...args: any[]) => Window;
     };
@@ -97,18 +99,22 @@ describe("batch queue and paired native Reader product workflow", function () {
         "translation-queue.json",
       );
       let tasks: any[] = [];
-      await wait(async () => {
-        if (!(await IOUtils.exists(queuePath))) return false;
-        tasks = ((await IOUtils.readJSON(queuePath)) as any[]).filter((task) =>
-          sources.some((source) => source.key === task.sourceKey),
-        );
-        if (tasks.some((task) => task.state === "failed"))
-          throw new Error("Batch task failed");
-        return (
-          tasks.length === 2 &&
-          tasks.every((task) => task.state === "completed")
-        );
-      }, "batch did not finish");
+      await wait(
+        async () => {
+          if (!(await IOUtils.exists(queuePath))) return false;
+          tasks = ((await IOUtils.readJSON(queuePath)) as any[]).filter(
+            (task) => sources.some((source) => source.key === task.sourceKey),
+          );
+          if (tasks.some((task) => task.state === "failed"))
+            throw new Error("Batch task failed");
+          return (
+            tasks.length === 2 &&
+            tasks.every((task) => task.state === "completed")
+          );
+        },
+        "batch did not finish",
+        1200,
+      );
       checkpoint("batch-completed");
       assert.include(prompt, "2 个 PDF");
       assert.isAtLeast(
@@ -186,7 +192,8 @@ describe("batch queue and paired native Reader product workflow", function () {
         "restart confirmation did not appear",
         10,
       );
-      assert.include(deniedRetry, "不从断点继续");
+      assert.include(deniedRetry, "而非断点继续");
+      assert.include(deniedRetry, "删除这条旧任务记录");
       buttons.find((button) => button.textContent === "打开双语对照")!.click();
       const source = sources[1],
         mapping = (await loadMapping(source.libraryID, source.key))!;

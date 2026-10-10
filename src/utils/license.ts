@@ -42,7 +42,7 @@ export function registerLicenseUI(win: Window): void {
         "THIRD_PARTY_NOTICES.md",
         "LICENSE.txt",
         "zotero-plugin-toolkit-LICENSE.txt",
-        "BabelDOC-0.5.20-LICENSE.txt",
+        "BabelDOC-0.6.4-LICENSE.txt",
         "DEPENDENCIES.json",
       ];
       const texts = await Promise.all(

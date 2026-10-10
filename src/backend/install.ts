@@ -25,7 +25,7 @@ export async function installBundledBackend(
       );
       if (
         !content ||
-        (name === "pyproject.toml" && !content.includes("babeldoc==0.5.20"))
+        (name === "pyproject.toml" && !content.includes("babeldoc==0.6.4"))
       ) {
         throw new Error(
           `Bundled backend file is missing or unexpected: ${name}`,

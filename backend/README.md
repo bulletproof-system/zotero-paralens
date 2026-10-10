@@ -1,11 +1,11 @@
 # BabelDOC 后端（开发接入）
 
-许可与源码：BabelDOC 固定为 0.5.20，保留上游 AGPL 声明；PyMuPDF 等间接依赖
+许可与源码：BabelDOC 固定为 0.6.4，保留上游 AGPL 声明；PyMuPDF 等间接依赖
 仍需按实际安装版本核对。插件不打包 .venv、模型或字体。详见
 [第三方许可声明](../THIRD_PARTY_NOTICES.md) 和
 [源码分发说明](../docs/source-distribution.md)。
 
-固定 `babeldoc==0.5.20`、Python 3.12。`worker.py` 使用 BabelDOC `OpenAITranslator`、`TranslationConfig`、`do_translate` 生成**单语**译文；debug IL 的翻译前、中、排版后快照经 `mapping_adapter.py` 变为不带 Zotero 附件 key 的 `mapping.v1` 草稿。源/译 PDF 分别计算 SHA-256，译文附件导入后再调用 `bindAttachmentKeys` 绑定。
+固定 `babeldoc==0.6.4`、Python 3.12。`worker.py` 使用 BabelDOC `OpenAITranslator`、`TranslationConfig`、`do_translate` 生成**单语**译文；debug IL 的翻译前、中、排版后快照经 `mapping_adapter.py` 变为不带 Zotero 附件 key 的 `mapping.v1` 草稿。源/译 PDF 分别计算 SHA-256，译文附件导入后再调用 `bindAttachmentKeys` 绑定。
 
 ## 部分失败与产物保留
 
@@ -58,7 +58,7 @@ const result = await backend.translate(
 
 构建插件：`npm run build`（生成 `.scaffold/build/zotero-paralens.xpi`）。现可通过右键 PDF 明确触发真实 API 翻译，开始前会确认可能产生费用；无需在命令行输入密钥。
 
-只验证本地排版/导出而不调用真实 API 时，在已安装 BabelDOC 0.5.20 的环境运行：
+只验证本地排版/导出而不调用真实 API 时，在已安装 BabelDOC 0.6.4 的环境运行：
 
 ```sh
 uv run --project "<Zotero profile>/paralens/backend" --no-sync --offline python scripts/offline-translation-smoke.py

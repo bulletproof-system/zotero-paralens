@@ -346,9 +346,10 @@ describe("ParaLens uv startup", function () {
     const username = "__paralens_test_only__";
     const logins = Services.logins;
     await logins.initializationPromise;
-    const login = Cc["@mozilla.org/login-manager/loginInfo;1"].createInstance(
-      Ci.nsILoginInfo,
-    );
+    // Do not rely on platform-specific Cc/Ci aliases in the test window.
+    const login = Components.classes[
+      "@mozilla.org/login-manager/loginInfo;1"
+    ].createInstance(Components.interfaces.nsILoginInfo);
     login.init(
       origin,
       null as unknown as string,

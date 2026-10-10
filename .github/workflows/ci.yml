@@ -29,7 +29,7 @@ jobs:
       - name: Run Build
         run: npm run build
       - name: Upload build result
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-result
           path: .scaffold/build
@@ -45,3 +45,21 @@ jobs:
         run: npm run test:unit
       - name: Run Zotero integration tests
         run: npm run test
+
+  python:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v10
+      - name: Install declared backend dependencies
+        run: uv sync --project backend
+      - name: Run Python unit tests without a real translation API
+        run: uv run --project backend --no-sync python -m unittest discover -s backend/tests -v

@@ -54,10 +54,10 @@ npm run verify:licenses
 
 插件在用户 profile 中部署本仓库的 Python 源文件。
 用户明确点击安装后，通过 `uv sync --project <后端目录> --python 3.12`
-安装 BabelDOC 0.5.20 及其依赖。启动插件不自动安装后端。
+安装 BabelDOC 0.6.4 及其依赖。启动插件不自动安装后端。
 
 - 本仓库中的 editable worker / adapter 源码位于 `backend/`。
-- BabelDOC 对应源码见其 `v0.5.20` 标签，地址列于第三方声明。
+- BabelDOC 对应源码见其 `v0.6.4` 标签，地址列于第三方声明。
 - Python 间接依赖没有固定和完成全面审查；单一 BabelDOC 版本不是完整锁文件。
 - 如果交付 .venv、wheel 集合、离线安装包或服务端部署，必须另外审查实际解析的
   依赖及原生库，提供适用的许可、对应源码和安装/修改说明。
