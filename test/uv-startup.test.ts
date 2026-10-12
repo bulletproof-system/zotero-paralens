@@ -1,3 +1,4 @@
+import type { CompatibleLoginManager } from "../src/backend/credentials";
 import { executeHidden } from "../src/backend/process";
 import { executeBackendInstall } from "../src/backend/installProcess";
 import { inspectUV } from "../src/backend/uvRuntime";
@@ -547,11 +548,11 @@ describe("ParaLens uv startup", function () {
     }
   });
 
-  it("can store and remove a disposable secret with Gecko's login manager", async function () {
+  it("can store, update and remove a disposable secret with Gecko's login manager", async function () {
     const origin = "https://paralens.invalid";
     const realm = "ParaLens translation API";
     const username = "__paralens_test_only__";
-    const logins = Services.logins;
+    const logins = Services.logins as CompatibleLoginManager;
     await logins.initializationPromise;
     // Do not rely on platform-specific Cc/Ci aliases in the test window.
     const login = Components.classes[
@@ -577,10 +578,22 @@ describe("ParaLens uv startup", function () {
       );
     await logins.addLoginAsync(login);
     try {
-      assert.equal((await find())?.password, "dummy-test-value");
+      const stored = await find();
+      assert.equal(stored?.password, "dummy-test-value");
+      const replacement = login.clone();
+      replacement.password = "updated-dummy-test-value";
+      if (typeof logins.modifyLoginAsync === "function")
+        await logins.modifyLoginAsync(stored!, replacement);
+      else logins.modifyLogin(stored!, replacement);
+      assert.equal((await find())?.password, "updated-dummy-test-value");
     } finally {
       const saved = await find();
-      if (saved) logins.removeLogin(saved);
+      if (saved) {
+        if (typeof logins.removeLoginAsync === "function")
+          await logins.removeLoginAsync(saved);
+        else logins.removeLogin(saved);
+      }
     }
+    assert.isUndefined(await find());
   });
 });

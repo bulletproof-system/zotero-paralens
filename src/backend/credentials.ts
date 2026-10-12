@@ -1,5 +1,14 @@
 import { ProviderId } from "./providers";
 
+// zotero-types still describes the synchronous mutation APIs.
+export type CompatibleLoginManager = nsILoginManager & {
+  modifyLoginAsync?: (
+    existing: nsILoginInfo,
+    replacement: nsILoginInfo,
+  ) => Promise<unknown>;
+  removeLoginAsync?: (login: nsILoginInfo) => Promise<unknown>;
+};
+
 const ORIGIN = "https://paralens.invalid";
 const REALM = "ParaLens translation API";
 
@@ -39,12 +48,20 @@ export async function saveAPIKey(
   );
   login.init(ORIGIN, null as unknown as string, REALM, provider, key.trim());
   const existing = await findProviderLogin(provider);
-  if (existing) Services.logins.modifyLogin(existing, login);
-  else await Services.logins.addLoginAsync(login);
+  const manager = Services.logins as CompatibleLoginManager;
+  if (existing) {
+    if (typeof manager.modifyLoginAsync === "function")
+      await manager.modifyLoginAsync(existing, login);
+    else manager.modifyLogin(existing, login);
+  } else await manager.addLoginAsync(login);
 }
 
 export async function deleteAPIKey(provider: ProviderId): Promise<void> {
   await Services.logins.initializationPromise;
   const existing = await findProviderLogin(provider);
-  if (existing) Services.logins.removeLogin(existing);
+  if (!existing) return;
+  const manager = Services.logins as CompatibleLoginManager;
+  if (typeof manager.removeLoginAsync === "function")
+    await manager.removeLoginAsync(existing);
+  else manager.removeLogin(existing);
 }
