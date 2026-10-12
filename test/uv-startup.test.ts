@@ -564,19 +564,22 @@ describe("ParaLens uv startup", function () {
       username,
       "dummy-test-value",
     );
-    const find = () =>
-      logins
-        .findLogins(origin, null as unknown as string, realm)
-        .find((entry) => entry.username === username);
-    if (find())
+    const find = async () => {
+      const matches: nsILoginInfo[] =
+        typeof logins.searchLoginsAsync === "function"
+          ? await logins.searchLoginsAsync({ origin, httpRealm: realm })
+          : logins.findLogins(origin, null as unknown as string, realm);
+      return matches.find((entry) => entry.username === username);
+    };
+    if (await find())
       throw new Error(
         "Test credential unexpectedly exists; refusing to overwrite it",
       );
     await logins.addLoginAsync(login);
     try {
-      assert.equal(find()?.password, "dummy-test-value");
+      assert.equal((await find())?.password, "dummy-test-value");
     } finally {
-      const saved = find();
+      const saved = await find();
       if (saved) logins.removeLogin(saved);
     }
   });

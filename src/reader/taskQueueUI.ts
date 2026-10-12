@@ -27,10 +27,17 @@ export async function showTaskQueue(
   );
   if (!win) throw new Error("无法打开任务队列窗口");
   windows.add(win);
+  let initialized = false;
   const setup = () => {
+    if (initialized || win.closed) return;
     const doc = win.document;
-    const list = doc.getElementById("tasks")!;
-    const status = doc.getElementById("status")!;
+    const list = doc.getElementById("tasks");
+    const status = doc.getElementById("status");
+    // openDialog can initially expose a complete about:blank document.
+    // Wait for the target page, even if an earlier load event has fired.
+    if (doc.readyState !== "complete" || !list || !status) return;
+    initialized = true;
+    win.removeEventListener("load", setup);
     const element = (name: string) =>
       doc.createElementNS("http://www.w3.org/1999/xhtml", name);
     const action = (
@@ -170,8 +177,8 @@ export async function showTaskQueue(
     );
     render();
   };
-  if (win.document.readyState === "complete") setup();
-  else win.addEventListener("load", setup, { once: true });
+  win.addEventListener("load", setup);
+  setup();
 }
 
 export function closeTaskQueueWindows(): void {
