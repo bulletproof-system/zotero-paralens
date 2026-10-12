@@ -1,3 +1,4 @@
+import { log } from "../utils/log";
 import { translationPerformance } from "./performance";
 import { describeJobFailure } from "./jobError";
 import { bundledBackendProjectDir } from "./install";
@@ -49,6 +50,7 @@ export class BabelDocBackend implements TranslationBackend {
 
   async cancel(): Promise<void> {
     this.cancelRequested = true;
+    log("收到翻译取消请求");
     if (this.job)
       await IOUtils.writeUTF8(PathUtils.join(this.job, "cancel"), "");
   }
@@ -97,6 +99,8 @@ export class BabelDocBackend implements TranslationBackend {
     if (!apiKey) throw new Error("请先在 ParaLens 设置中保存翻译 API Key");
     const configFile = await IOUtils.createUniqueFile(job, "config-", 0o600);
     this.job = job;
+    log("开始 BabelDOC 翻译");
+    let lastLoggedPercent = -1;
     try {
       await IOUtils.writeJSON(configFile, {
         sourcePath: PathUtils.normalize(request.sourcePath),
@@ -139,6 +143,19 @@ export class BabelDocBackend implements TranslationBackend {
               if (raw !== last) {
                 last = raw;
                 const update = JSON.parse(raw) as TranslationJobProgress;
+                if (
+                  typeof update.percent === "number" &&
+                  Number.isFinite(update.percent)
+                ) {
+                  const percent = Math.max(
+                    0,
+                    Math.min(100, Math.floor(update.percent)),
+                  );
+                  if (percent >= lastLoggedPercent + 5) {
+                    log("BabelDOC 翻译进度：" + percent + "%");
+                    lastLoggedPercent = percent;
+                  }
+                }
                 onProgress({
                   stage: update.stage,
                   completed: update.completed,
@@ -162,6 +179,7 @@ export class BabelDocBackend implements TranslationBackend {
           failureDetail = await IOUtils.readJSON(
             PathUtils.join(job, "error.json"),
           );
+          log(describeJobFailure(failureDetail));
         } catch {
           /* Older workers/abrupt exits may have no structured error. */
         }
@@ -208,6 +226,11 @@ export class BabelDocBackend implements TranslationBackend {
       ) {
         throw new Error("BabelDOC 输出摘要与 PDF 不一致");
       }
+      log(
+        result.completion === "partial"
+          ? "BabelDOC 返回部分译文"
+          : "BabelDOC 翻译完成",
+      );
       return {
         translatedPdfPath: pdf,
         mappingDraftPath: draft,
@@ -218,6 +241,9 @@ export class BabelDocBackend implements TranslationBackend {
             ? describeJobFailure(result.warning || failureDetail)
             : undefined,
       };
+    } catch (error) {
+      log(this.cancelRequested ? "BabelDOC 翻译已取消" : "BabelDOC 翻译失败");
+      throw error;
     } finally {
       this.job = undefined;
       await IOUtils.remove(configFile, { ignoreAbsent: true });

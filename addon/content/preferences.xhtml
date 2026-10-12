@@ -30,7 +30,21 @@
       type="button"
       data-l10n-id="pref-backend-reinstall"
     ></html:button>
+    <html:button
+      id="paralens-backend-check"
+      type="button"
+      data-l10n-id="pref-backend-check"
+    ></html:button>
   </hbox>
+  <html:progress
+    id="paralens-backend-progress"
+    max="100"
+    value="0"
+    hidden="hidden"
+    style="width: 100%"
+    aria-describedby="paralens-backend-status"
+    data-l10n-id="pref-backend-progress"
+  ></html:progress>
   <html:p id="paralens-backend-status" role="status"></html:p>
   <html:p data-l10n-id="pref-backend-note"></html:p>
   <hbox align="center">
@@ -106,6 +120,16 @@
     ></html:label>
   </hbox>
   <html:p data-l10n-id="pref-auto-repair-note"></html:p>
+
+  <hbox align="center">
+    <html:input id="paralens-save-logs" type="checkbox" />
+    <html:label
+      for="paralens-save-logs"
+      data-l10n-id="pref-save-logs"
+    ></html:label>
+  </hbox>
+  <html:p data-l10n-id="pref-save-logs-note"></html:p>
+  <html:p id="paralens-log-path" style="overflow-wrap: anywhere"></html:p>
 
   <html:button
     id="paralens-save"

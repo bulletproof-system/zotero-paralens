@@ -1,5 +1,13 @@
 import { translationPerformance } from "../backend/performance";
-import { executeHidden } from "../backend/process";
+import {
+  executeBackendInstall,
+  executeBackendProbe,
+} from "../backend/installProcess";
+import {
+  BackendInstallProgress,
+  InstallStage,
+} from "../backend/installProgress";
+import { log, pluginLogDirectory } from "../utils/log";
 import { deleteAPIKey, hasAPIKey, saveAPIKey } from "../backend/credentials";
 import {
   getProvider,
@@ -12,7 +20,10 @@ import {
   bundledBackendProjectDir,
   installBundledBackend,
 } from "../backend/install";
-import { isBackendInstalled } from "../backend/installationStatus";
+import {
+  inspectBackendInstallation,
+  BackendInstallationState,
+} from "../backend/installationStatus";
 import {
   BACKENDS,
   backendInstallArguments,
@@ -21,6 +32,8 @@ import {
 import { getPref, setPref } from "../utils/prefs";
 import { registerLicenseUI } from "../utils/license";
 import { translationQueue } from "../reader/translationWorkflow";
+
+const backendSettingsListeners = new Set<(origin: Document) => void>();
 
 export async function registerPrefsScripts(win: Window): Promise<void> {
   registerLicenseUI(win);
@@ -38,6 +51,16 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
   ) as HTMLInputElement | null;
   const status = doc.getElementById("paralens-uv-status");
   const backendStatus = doc.getElementById("paralens-backend-status");
+  const backendCheckButton = doc.getElementById(
+    "paralens-backend-check",
+  ) as HTMLButtonElement | null;
+  const backendProgress = doc.getElementById(
+    "paralens-backend-progress",
+  ) as HTMLProgressElement | null;
+  const saveLogs = doc.getElementById(
+    "paralens-save-logs",
+  ) as HTMLInputElement | null;
+  const logPath = doc.getElementById("paralens-log-path");
   const backendReinstall = doc.getElementById(
     "paralens-backend-reinstall",
   ) as HTMLButtonElement | null;
@@ -126,6 +149,19 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
   concurrency.value = String(performance.concurrency);
   qps.value = String(performance.qps);
   autoRepair.checked = getPref("autoRepair") === true;
+  if (saveLogs) {
+    saveLogs.checked = getPref("saveLogs") === true;
+    // Diagnostic logging takes effect immediately, including before installation.
+    saveLogs.addEventListener("change", () => {
+      setPref("saveLogs", saveLogs.checked);
+      if (saveLogs.checked) log("日志保存已开启");
+    });
+  }
+  if (logPath)
+    report(
+      logPath,
+      msg("日志目录：", "Log directory: ") + pluginLogDirectory(),
+    );
   sourceLanguage.value = getPref("sourceLanguage") || "en";
   targetLanguage.value = getPref("targetLanguage") || "zh";
 
@@ -180,56 +216,110 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
   };
   showUV();
   let installing = false;
+  let backendChecking = false;
   let backendCheck = 0;
-  const checkBackendInstalled = (projectDir: string | undefined) =>
-    isBackendInstalled(
+  const updateBackendControls = () => {
+    const busy = installing || addon.data.backendInstalling === true;
+    backendSelect.disabled = busy;
+    backendInstall.disabled = busy || backendChecking;
+    backendReinstall.disabled = busy || backendChecking;
+    if (backendCheckButton)
+      backendCheckButton.disabled = busy || backendChecking;
+  };
+  const checkBackend = (projectDir: string | undefined) =>
+    inspectBackendInstallation(
       projectDir,
       Services.appinfo.OS === "WINNT",
       (path) => IOUtils.exists(path),
-      async (path, args) => (await executeHidden(path, args)) === true,
-      true,
+      executeBackendProbe,
     );
+  const backendDescription = (
+    state: BackendInstallationState,
+    name: string,
+    directory: string,
+  ) => {
+    if (state === "ready")
+      return msg(
+        name + " 已安装：" + directory,
+        name + " installed: " + directory,
+      );
+    if (state === "broken")
+      return msg(
+        name +
+          " 已安装，但依赖模块加载失败。请开启日志保存后点击「检测后端」，检查 Python 依赖或系统运行库。",
+        name +
+          " is installed, but dependency imports failed. Enable log saving and click Check backend to inspect Python dependencies or system runtime libraries.",
+      );
+    if (state === "incompatible")
+      return msg(
+        name +
+          " 未安装、版本不符或 Python 无法启动：" +
+          directory +
+          "。请开启日志后检测或重新安装。",
+        name +
+          " is missing, has an incompatible version, or Python cannot start: " +
+          directory +
+          ". Enable logs and check or reinstall.",
+      );
+    return (
+      addon.data.backendInstallError ||
+      msg(name + " 未安装：" + directory, name + " not installed: " + directory)
+    );
+  };
   const showBackend = async () => {
+    if (installing || addon.data.backendInstalling) {
+      updateBackendControls();
+      return;
+    }
     const selected = backendSelect.value;
     const backend = resolveBackend(selected);
     if (backend.id !== selected) return;
     const check = ++backendCheck;
     const backendDir =
       addon.data.backendProjectDir || bundledBackendProjectDir();
-    backendInstall.disabled = true;
-    backendReinstall.disabled = true;
-    const installed = await checkBackendInstalled(backendDir);
-    if (
-      check !== backendCheck ||
-      backendSelect.value !== selected ||
-      installing ||
-      addon.data.backendInstalling
-    )
+    backendChecking = true;
+    updateBackendControls();
+    try {
+      const state = await checkBackend(backendDir);
+      if (
+        check !== backendCheck ||
+        backendSelect.value !== selected ||
+        installing ||
+        addon.data.backendInstalling
+      )
+        return;
+      backendInstall.hidden = state === "ready" || state === "broken";
+      report(
+        backendStatus,
+        backendDescription(state, backend.name, backendDir),
+      );
+      log("后端检测结果：" + state);
+    } finally {
+      if (check === backendCheck) backendChecking = false;
+      updateBackendControls();
+    }
+  };
+  const onBackendStateChanged = (origin: Document) => {
+    if (win.closed || backendSelect.isConnected === false) {
+      backendSettingsListeners.delete(onBackendStateChanged);
       return;
-    // A click initiates provisioning; neither opening preferences nor saving
-    // settings downloads Python packages.
-    backendInstall.hidden = installed;
-    backendInstall.disabled = installing;
-    backendReinstall.disabled = installing;
-    report(
-      backendStatus,
-      installed
-        ? msg(
-            `${backend.name} 已安装：${backendDir}`,
-            `${backend.name} installed: ${backendDir}`,
-          )
-        : !addon.data.backendInstallError
-          ? msg(
-              `${backend.name} 未安装：${backendDir}`,
-              `${backend.name} not installed: ${backendDir}`,
-            )
-          : msg(
-              addon.data.backendInstallError,
-              `${backend.name} backend files are not available. Click Install to retry.`,
-            ),
-    );
+    }
+    updateBackendControls();
+    if (origin !== doc && !addon.data.backendInstalling) void showBackend();
+  };
+  backendSettingsListeners.add(onBackendStateChanged);
+  win.addEventListener?.(
+    "unload",
+    () => backendSettingsListeners.delete(onBackendStateChanged),
+    { once: true },
+  );
+  const notifyBackendStateChanged = () => {
+    for (const listener of backendSettingsListeners) listener(doc);
   };
   backendSelect.addEventListener("change", () => {
+    void showBackend();
+  });
+  backendCheckButton?.addEventListener("click", () => {
     void showBackend();
   });
   const provisionBackend = async (reinstall: boolean) => {
@@ -258,13 +348,61 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
       )
     )
       return;
+    const trigger = reinstall ? backendReinstall : backendInstall;
+    const restoreFocus = doc.activeElement === trigger;
     installing = true;
     addon.data.backendInstalling = true;
     ++backendCheck;
-    backendInstall.disabled = true;
-    backendReinstall.disabled = true;
-    backendSelect.disabled = true;
+    backendChecking = false;
+    notifyBackendStateChanged();
     const backend = resolveBackend(backendSelect.value);
+    const stages: Record<InstallStage, string> = {
+      preparing: msg("准备后端文件", "Preparing backend files"),
+      "checking-uv": msg("检测 uv", "Checking uv"),
+      resolving: msg(
+        "解析依赖及准备 Python 环境",
+        "Resolving dependencies and preparing Python",
+      ),
+      downloading: msg(
+        "下载及构建依赖",
+        "Downloading and building dependencies",
+      ),
+      installing: msg("安装依赖", "Installing dependencies"),
+      verifying: msg("验证后端模块", "Verifying backend modules"),
+      completed: msg("安装完成", "Installation complete"),
+    };
+    let lastPercent = 0;
+    const progress = new BackendInstallProgress(({ stage, percent }) => {
+      lastPercent = percent;
+      if (backendProgress) {
+        backendProgress.hidden = false;
+        backendProgress.max = 100;
+        backendProgress.value = percent;
+      }
+      report(
+        backendStatus,
+        msg(
+          (reinstall ? "正在重新安装 " : "正在安装 ") +
+            backend.name +
+            " · " +
+            percent +
+            "%" +
+            (percent < 100 ? "（估算）" : "") +
+            " · " +
+            stages[stage],
+          (reinstall ? "Reinstalling " : "Installing ") +
+            backend.name +
+            " · " +
+            percent +
+            "%" +
+            (percent < 100 ? " (estimated)" : "") +
+            " · " +
+            stages[stage],
+        ),
+      );
+    });
+    progress.advance("preparing", 0);
+    log(reinstall ? "开始重新安装后端" : "开始安装后端");
     try {
       if (backend.id !== backendSelect.value)
         throw new Error("Unsupported backend");
@@ -274,6 +412,7 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
       addon.data.backendInstallError = undefined;
       // Respect the path currently shown in preferences without committing it
       // until Save; the uv probe accepts an override for this explicit action.
+      progress.advance("checking-uv", 10);
       const uv = await inspectUV(uvPath.value.trim());
       addon.data.uv = uv;
       showUV();
@@ -284,47 +423,50 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
             "uv is unavailable; install uv or enter its absolute path first.",
           ),
         );
-      report(
-        backendStatus,
-        reinstall
-          ? msg(
-              `正在重新安装 ${backend.name}…`,
-              `Reinstalling ${backend.name}…`,
-            )
-          : msg(`正在安装 ${backend.name}…`, `Installing ${backend.name}…`),
-      );
-      const success = await executeHidden(
+      progress.advance("resolving", 20);
+      const success = await executeBackendInstall(
         uv.path,
         backendInstallArguments(backend.id, projectDir, reinstall),
+        (line) => progress.output(line),
       );
-      if (success !== true || !(await checkBackendInstalled(projectDir)))
-        throw new Error(
-          msg(
-            "安装失败；请检查网络、磁盘空间及 uv 日志。",
-            "Installation failed; check network, free space, and uv logs.",
-          ),
-        );
+      progress.advance("verifying", 95);
+      const state =
+        success === true ? await checkBackend(projectDir) : "incompatible";
+      if (state !== "ready") {
+        log("安装后验证失败：" + state);
+        throw new Error(backendDescription(state, backend.name, projectDir));
+      }
+      progress.advance("completed", 100);
+      log(reinstall ? "后端重新安装完成" : "后端安装完成");
       report(
         backendStatus,
         msg(
-          reinstall ? "后端重新安装完成。" : "后端安装完成。",
-          reinstall ? "Backend reinstalled." : "Backend installed.",
+          reinstall ? "后端重新安装完成（100%）。" : "后端安装完成（100%）。",
+          reinstall
+            ? "Backend reinstalled (100%)."
+            : "Backend installed (100%).",
         ),
       );
       backendInstall.hidden = true;
     } catch (error) {
+      log("后端安装失败，最后进度：" + lastPercent + "%");
       report(
         backendStatus,
-        error instanceof Error
-          ? error.message
-          : msg("安装失败。", "Installation failed."),
+        lastPercent +
+          "% · " +
+          msg("安装失败：", "Installation failed: ") +
+          (error instanceof Error
+            ? error.message
+            : msg("安装失败。", "Installation failed.")),
       );
     } finally {
       installing = false;
       addon.data.backendInstalling = false;
-      backendInstall.disabled = false;
-      backendReinstall.disabled = false;
-      backendSelect.disabled = false;
+      notifyBackendStateChanged();
+      // Hiding/disabling the focused install button can strand Gecko popup focus.
+      if (restoreFocus && !win.closed) {
+        (trigger.hidden ? backendSelect : trigger).focus();
+      }
     }
   };
   backendInstall.addEventListener("click", () => {

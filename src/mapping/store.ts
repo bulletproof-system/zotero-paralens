@@ -1,4 +1,5 @@
-﻿import { MappingV1 } from "./types";
+import { log } from "../utils/log";
+import { MappingV1 } from "./types";
 import { validateMapping } from "./validation";
 
 const sourceTag = (key: string) => `paralens-mapping:${key}`;
@@ -103,7 +104,7 @@ export async function saveMapping(
         tmpPath: `${path}.paralens-tmp`,
       });
     } catch {
-      Zotero.debug("[ParaLens] 本地映射缓存写入失败；已保存的映射附件仍可使用");
+      log("[ParaLens] 本地映射缓存写入失败；已保存的映射附件仍可使用");
     }
   } catch (error) {
     if (attachment) await attachment.eraseTx().catch(() => {});
@@ -112,9 +113,7 @@ export async function saveMapping(
     try {
       await IOUtils.remove(draft, { ignoreAbsent: true });
     } catch {
-      Zotero.debug(
-        "[ParaLens] 临时映射文件暂时无法清理；不影响已提交的映射附件",
-      );
+      log("[ParaLens] 临时映射文件暂时无法清理；不影响已提交的映射附件");
     }
   }
 }

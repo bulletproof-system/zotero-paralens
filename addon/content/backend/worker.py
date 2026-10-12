@@ -674,6 +674,8 @@ async def run(data, source, job, diagnostics=None):
             pool_max_workers=performance["concurrency"],
         )
         getattr(layout, "init_font_mapper", lambda _config: None)(config)
+        translation_stages = get_translation_stage(config)
+        known_stages = {name for name, _weight in translation_stages}
         # Use the pinned synchronous API, avoiding the async event/queue
         # handshake that previously stalled on Windows with BabelDOC 0.5.20.
         def on_progress(**event):
@@ -682,11 +684,14 @@ async def run(data, source, job, diagnostics=None):
                 config.cancel_translation()
                 raise asyncio.CancelledError()
             if event.get("type") in ("progress_start", "progress_update", "progress_end"):
+                stage = event.get("stage")
+                if stage in known_stages:
+                    diagnostics["backendStage"] = stage
                 atomic_json(job / "progress.json", translation_progress(event))
 
         diagnostics["stage"] = "translation"
         with watch_cancellation(job, cancellation), ProgressMonitor(
-            get_translation_stage(config),
+            translation_stages,
             progress_change_callback=on_progress,
             finish_callback=lambda **_event: None,
             report_interval=config.report_interval,
@@ -760,6 +765,8 @@ def safe_job_error(error, stage):
                    and type(value) is int and value >= 0}
         return {"schemaVersion": 1, "stage": stage, "code": "translation_untranslated", "quality": quality}
     codes = {
+        "ScannedPDFError": "pdf_scanned", "ExtractTextError": "pdf_text_extraction",
+        "InputFileGeneratedByBabelDOCError": "pdf_already_translated",
         "AuthenticationError": "api_auth", "PermissionDeniedError": "api_auth",
         "RateLimitError": "api_rate_limit", "APIConnectionError": "api_connection",
         "APITimeoutError": "api_timeout", "TimeoutError": "api_timeout",
@@ -800,6 +807,11 @@ def main():
     except (Exception, asyncio.CancelledError) as error:
         status = ({"schemaVersion": 1, "stage": "cancelled", "code": "cancelled"}
                   if (job / "cancel").exists() else safe_job_error(error, diagnostics["stage"]))
+        # Persist only identifiers, never exception messages or traceback source lines.
+        name = type(error).__name__
+        status["exceptionType"] = name if name in {"ScannedPDFError", "ExtractTextError", "InputFileGeneratedByBabelDOCError", "ValueError", "RuntimeError", "ImportError", "ModuleNotFoundError", "AttributeError", "AssertionError", "TypeError", "OSError", "MemoryError", "ProviderJobError"} else "UnknownError"
+        if "backendStage" in diagnostics:
+            status["backendStage"] = diagnostics["backendStage"]
         try:
             atomic_json(job / "error.json", status)
         except OSError:

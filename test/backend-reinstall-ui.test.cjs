@@ -15,13 +15,22 @@ const loaded = build({
       name: "offline-preference-actions",
       setup(build) {
         const mocked = {
-          "backend/process": `export async function executeHidden(binary, args) {
+          "backend/process": `export async function executeHidden() { return globalThis.__reinstallUI.probeSuccess; }`,
+          "backend/installProcess": `export async function executeBackendInstall(binary, args, onLine) {
         const state = globalThis.__reinstallUI;
-        if (args[0] !== "sync") return state.probeSuccess;
         state.sync.push({binary, args});
+        onLine("Resolved 42 packages in 1s");
+        onLine("Downloading babeldoc (1MiB)");
+        if (state.outputGate) await state.outputGate;
+        onLine("Prepared 42 packages in 2s");
         if (state.syncGate) await state.syncGate;
         if (state.syncFailure) throw Error("后端进程执行失败");
         return true;
+      }
+      export async function executeBackendProbe(binary, args) {
+        const state = globalThis.__reinstallUI;
+        if (state.probeGate) await state.probeGate;
+        return state.probeSuccess && (state.importSuccess !== false || !args[1].includes("high_level"));
       }`,
           "backend/credentials": `export async function hasAPIKey() { return true; }
         export async function saveAPIKey() { throw Error("Must not change credentials"); }
@@ -29,7 +38,8 @@ const loaded = build({
           "backend/uvRuntime": `export async function inspectUV() { return { available: true, path: "/mock/uv" }; }`,
           "backend/install": `export function bundledBackendProjectDir() { return "/profile/backend"; }
         export async function installBundledBackend() { globalThis.__reinstallUI.deploys++; return "/profile/backend"; }`,
-          "utils/prefs": `export function getPref() { return undefined; } export function setPref() {}`,
+          "utils/prefs": `export function getPref(key) { return globalThis.__reinstallUI.prefs[key]; } export function setPref(key, value) { globalThis.__reinstallUI.prefs[key] = value; }`,
+          "utils/log": `export function log(message) { globalThis.__reinstallUI.logs.push(message); } export function pluginLogDirectory() { return "/profile/paralens/logs"; }`,
           "utils/license": `export function registerLicenseUI() {}`,
           "reader/translationWorkflow": `export function translationQueue() { return { snapshot: () => globalThis.__reinstallUI.tasks }; }`,
         };
@@ -55,22 +65,33 @@ async function wait(condition) {
   }
   assert.fail("Preferences action did not finish");
 }
-async function fixture() {
+const windows = [];
+async function fixture(existing) {
+  if (!existing) {
+    for (const window of windows.splice(0)) {
+      window.closed = true;
+      window.events.unload?.();
+    }
+  }
   const { registerPrefsScripts } = await loaded;
-  const state = (globalThis.__reinstallUI = {
+  const state = (globalThis.__reinstallUI = existing || {
     sync: [],
+    prefs: {},
+    logs: [],
     deploys: 0,
     tasks: [],
     probeSuccess: true,
+    importSuccess: true,
     confirms: [],
     allow: true,
   });
-  global.addon = {
-    data: {
-      backendProjectDir: "/profile/backend",
-      uv: { available: true, path: "/mock/uv" },
-    },
-  };
+  if (!existing)
+    global.addon = {
+      data: {
+        backendProjectDir: "/profile/backend",
+        uv: { available: true, path: "/mock/uv" },
+      },
+    };
   global.rootURI = "file:///mock-addon/";
   global.Services = { appinfo: { OS: "WINNT" } };
   global.PathUtils = { join: path.join };
@@ -90,25 +111,53 @@ async function fixture() {
         addEventListener(name, callback) {
           this.events[name] = callback;
         },
+        focus() {
+          document.activeElement = this;
+        },
         click() {
-          if (!this.disabled) this.events.click?.();
+          if (!this.disabled) {
+            this.focus();
+            this.events.click?.();
+          }
         },
       });
     return elements.get(id);
   };
-  await registerPrefsScripts({
+  const document = {
+    getElementById: element,
+    createElementNS: () => ({}),
+    activeElement: null,
+  };
+  const window = {
+    closed: false,
+    events: {},
+    addEventListener(type, callback) {
+      this.events[type] = callback;
+    },
     navigator: { language: "zh-CN" },
-    document: { getElementById: element, createElementNS: () => ({}) },
+    document,
     confirm(message) {
       state.confirms.push(message);
       return state.allow;
     },
-  });
+  };
+  windows.push(window);
+  await registerPrefsScripts(window);
   const install = element("paralens-backend-install"),
     reinstall = element("paralens-backend-reinstall"),
     status = element("paralens-backend-status");
-  await wait(() => !reinstall.disabled);
-  return { state, install, reinstall, status };
+  if (!global.addon.data.backendInstalling)
+    await wait(() => !reinstall.disabled);
+  return {
+    state,
+    install,
+    reinstall,
+    status,
+    progress: element("paralens-backend-progress"),
+    element,
+    document,
+    window,
+  };
 }
 
 test("reinstall requires confirmation and remains available for installed backends", async () => {
@@ -192,4 +241,99 @@ test("a successful uv exit is not accepted when worker imports still fail", asyn
     false,
     "Failed health checks retain the repair option",
   );
+});
+
+test("installation percentage follows output, stops below 100 on failure and resets on retry", async () => {
+  const { state, reinstall, status, progress } = await fixture();
+  let release;
+  state.outputGate = new Promise((resolve) => {
+    release = resolve;
+  });
+  reinstall.click();
+  await wait(() => state.sync.length === 1);
+  assert.equal(progress.hidden, false);
+  assert.equal(progress.value, 40);
+  assert.match(status.textContent, /40%.*估算.*下载/);
+  state.syncFailure = true;
+  release();
+  await wait(() => !reinstall.disabled);
+  assert.equal(progress.value, 85);
+  assert.match(status.textContent, /85%.*失败/);
+  state.syncFailure = false;
+  state.outputGate = undefined;
+  reinstall.click();
+  assert.equal(progress.value, 0);
+  await wait(() => state.sync.length === 2 && !reinstall.disabled);
+  assert.equal(progress.value, 100);
+  assert.match(status.textContent, /100%/);
+});
+
+test("log toggle applies immediately and displays the plugin log folder", async () => {
+  const { state, element } = await fixture();
+  const toggle = element("paralens-save-logs");
+  assert.equal(toggle.checked, false);
+  assert.match(
+    element("paralens-log-path").textContent,
+    /\/profile\/paralens\/logs/,
+  );
+  toggle.checked = true;
+  toggle.events.change();
+  assert.equal(state.prefs.saveLogs, true);
+  assert.match(state.logs.at(-1), /已开启/);
+  toggle.checked = false;
+  toggle.events.change();
+  assert.equal(state.prefs.saveLogs, false);
+});
+
+test("installed packages with broken imports get a runtime failure message and a check action", async () => {
+  const { state, element, status, install } = await fixture();
+  state.importSuccess = false;
+  element("paralens-backend-check").click();
+  await wait(() => !element("paralens-backend-check").disabled);
+  assert.match(status.textContent, /已安装.*依赖模块加载失败/);
+  assert.doesNotMatch(status.textContent, /未安装/);
+  assert.equal(install.hidden, true);
+});
+
+test("settings opened during installation recover their controls when another pane finishes", async () => {
+  const first = await fixture();
+  let release;
+  first.state.syncGate = new Promise((resolve) => {
+    release = resolve;
+  });
+  first.reinstall.click();
+  await wait(() => first.state.sync.length === 1);
+  const second = await fixture(first.state);
+  assert.equal(second.element("paralens-backend").disabled, true);
+  assert.equal(second.reinstall.disabled, true);
+  release();
+  await wait(() => !first.reinstall.disabled && !second.reinstall.disabled);
+  assert.equal(second.element("paralens-backend").disabled, false);
+  assert.match(second.status.textContent, /已安装/);
+  assert.equal(second.install.hidden, true);
+});
+
+test("hiding a focused install button moves focus to an enabled selector", async () => {
+  const fixtureUI = await fixture();
+  fixtureUI.state.probeSuccess = false;
+  fixtureUI.element("paralens-backend-check").click();
+  await wait(() => !fixtureUI.element("paralens-backend-check").disabled);
+  assert.equal(fixtureUI.install.hidden, false);
+  fixtureUI.state.probeSuccess = true;
+  fixtureUI.install.click();
+  await wait(
+    () => fixtureUI.state.sync.length === 1 && !fixtureUI.install.disabled,
+  );
+  assert.equal(fixtureUI.install.hidden, true);
+  assert.equal(
+    fixtureUI.document.activeElement,
+    fixtureUI.element("paralens-backend"),
+  );
+  for (const id of [
+    "paralens-backend",
+    "paralens-provider",
+    "paralens-source-language",
+    "paralens-target-language",
+  ])
+    assert.equal(fixtureUI.element(id).disabled, false);
 });

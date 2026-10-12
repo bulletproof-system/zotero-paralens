@@ -22,7 +22,7 @@ export async function isBackendInstalled(
       "-c",
       [
         "from importlib.metadata import version",
-        "assert version('babeldoc') == '0.6.4'",
+        "installed_version = version('babeldoc'); assert installed_version == '0.6.4', 'BabelDOC version mismatch: ' + installed_version",
         "import pymupdf",
         "from babeldoc.docvision.base_doclayout import DocLayoutModel",
         "from babeldoc.format.pdf.high_level import do_translate, get_translation_stage",
@@ -39,4 +39,36 @@ export async function isBackendInstalled(
   } catch {
     return false;
   }
+}
+
+export type BackendInstallationState =
+  "missing" | "incompatible" | "broken" | "ready";
+
+/** Distinguish missing packages from installed packages whose native imports fail. */
+export async function inspectBackendInstallation(
+  projectDir: string | undefined,
+  isWindows: boolean,
+  exists: (path: string) => Promise<boolean>,
+  execute: (path: string, args: string[]) => Promise<boolean>,
+): Promise<BackendInstallationState> {
+  if (!projectDir) return "missing";
+  const environment = PathUtils.join(projectDir, ".venv");
+  const python = PathUtils.join(
+    environment,
+    ...(isWindows ? ["Scripts", "python.exe"] : ["bin", "python"]),
+  );
+  try {
+    if (
+      !(await exists(PathUtils.join(environment, "pyvenv.cfg"))) ||
+      !(await exists(python))
+    )
+      return "missing";
+  } catch {
+    return "incompatible";
+  }
+  if (!(await isBackendInstalled(projectDir, isWindows, exists, execute)))
+    return "incompatible";
+  if (!(await isBackendInstalled(projectDir, isWindows, exists, execute, true)))
+    return "broken";
+  return "ready";
 }

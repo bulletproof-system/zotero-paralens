@@ -28,3 +28,10 @@ pref-legal-archive = 下载 Release 源码附件
 
 pref-auto-repair = 自动补译疑似漏译段落（默认关闭）
 pref-auto-repair-note = 默认只检查漏译，不额外调用 API；疑似漏译或检查异常时仍尝试生成并保留 PDF。开启后仅影响新入队任务，每段最多补译两次，可能增加 API 费用和等待时间；补译失败不会阻止保留译文。
+
+pref-backend-progress =
+    .aria-label = 后端安装进度
+pref-save-logs = 保存日志到插件文件夹（立即生效）
+pref-save-logs-note = 默认关闭。开启后将插件运行、后端安装和翻译状态日志按天保存到 Zotero 配置目录中的 paralens/logs；不记录 API Key 或文档正文。关闭后停止写入，已有日志保留。
+
+pref-backend-check = 检测后端

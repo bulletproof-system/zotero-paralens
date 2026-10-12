@@ -13,6 +13,7 @@ function loadInstallTest(environment = {}, backendInstalled = false) {
   let backendProbes = 0;
   const modules = {
     "../src/backend/process": {},
+    "../src/backend/installProcess": {},
     "../src/backend/uvRuntime": {},
     "../src/backend/installationStatus": {
       isBackendInstalled: async () => {

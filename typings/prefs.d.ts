@@ -18,6 +18,7 @@ declare namespace _ZoteroTypes {
       "translationConcurrency": number;
       "translationQps": number;
       "autoRepair": boolean;
+      "saveLogs": boolean;
     };
   }
 }

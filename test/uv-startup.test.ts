@@ -1,4 +1,5 @@
 import { executeHidden } from "../src/backend/process";
+import { executeBackendInstall } from "../src/backend/installProcess";
 import { inspectUV } from "../src/backend/uvRuntime";
 import { isBackendInstalled } from "../src/backend/installationStatus";
 import { assert } from "chai";
@@ -83,6 +84,98 @@ describe("ParaLens uv startup", function () {
       rejected = true;
     }
     assert.isTrue(rejected, "Nonzero native exits must not look successful");
+  });
+
+  it("captures installer output without a visible Windows console", async function () {
+    const mockUV = Services.env.get("PARALENS_TEST_INSTALL_UV");
+    if (Services.appinfo.OS !== "WINNT" || !mockUV) this.skip();
+    const record = PathUtils.join(
+      PathUtils.parent(mockUV)!,
+      "hidden-install-process.txt",
+    );
+    const lines: string[] = [];
+    assert.isTrue(
+      await executeBackendInstall(mockUV, ["--hidden-probe", record], (line) =>
+        lines.push(line),
+      ),
+    );
+    assert.deepEqual((await IOUtils.readUTF8(record)).trim().split(/\r?\n/), [
+      "parent:false",
+      "child:false",
+    ]);
+    assert.isTrue(
+      await executeBackendInstall(mockUV, ["--version"], (line) =>
+        lines.push(line),
+      ),
+    );
+    assert.include(lines, "uv 0.test-only");
+    let rejected = false;
+    try {
+      await executeBackendInstall(mockUV, ["--exit-error"], () => {});
+    } catch {
+      rejected = true;
+    }
+    assert.isTrue(rejected);
+  });
+
+  it("saves logs in the plugin folder immediately after enabling the preference", async function () {
+    const old = getPref("saveLogs");
+    const pane = Zotero.PreferencePanes.pluginPanes.find(
+      (p) => p.pluginID === config.addonID,
+    );
+    const win = Zotero.Utilities.Internal.openPreferences(pane!.id!) as Window;
+    try {
+      let toggle: HTMLInputElement | null = null;
+      for (let i = 0; i < 50; i++) {
+        toggle = win.document.getElementById(
+          "paralens-save-logs",
+        ) as HTMLInputElement | null;
+        if (
+          toggle &&
+          win.document.getElementById("paralens-log-path")?.textContent
+        )
+          break;
+        await Zotero.Promise.delay(100);
+      }
+      assert.isNotNull(toggle);
+      const directory = PathUtils.join(
+        PathUtils.profileDir,
+        "paralens",
+        "logs",
+      );
+      assert.include(
+        win.document.getElementById("paralens-log-path")!.textContent!,
+        directory,
+      );
+      toggle!.checked = true;
+      toggle!.dispatchEvent(
+        new (win as Window & { Event: typeof Event }).Event("change", {
+          bubbles: true,
+        }),
+      );
+      assert.isTrue(getPref("saveLogs"));
+      let content = "";
+      for (let i = 0; i < 50; i++) {
+        if (await IOUtils.exists(directory)) {
+          for (const file of await IOUtils.getChildren(directory)) {
+            if (file.endsWith(".log")) content += await IOUtils.readUTF8(file);
+          }
+        }
+        if (content.includes("日志保存已开启")) break;
+        await Zotero.Promise.delay(100);
+      }
+      assert.include(content, "日志保存已开启");
+      toggle!.checked = false;
+      toggle!.dispatchEvent(
+        new (win as Window & { Event: typeof Event }).Event("change", {
+          bubbles: true,
+        }),
+      );
+      assert.isFalse(getPref("saveLogs"));
+    } finally {
+      setPref("saveLogs", old);
+      win.close();
+    }
   });
 
   it("renders the uv and API provider settings page", async function () {
@@ -340,6 +433,7 @@ describe("ParaLens uv startup", function () {
       (
         win!.document.getElementById("paralens-uv-path") as HTMLInputElement
       ).value = mockUV;
+      button()!.focus();
       button()!.click();
       for (
         let i = 0;
@@ -350,6 +444,38 @@ describe("ParaLens uv startup", function () {
       assert.isTrue(
         await IOUtils.exists(record),
         "Only an explicit click should run uv sync",
+      );
+      const progress = win!.document.getElementById(
+        "paralens-backend-progress",
+      ) as HTMLProgressElement;
+      assert.isFalse(progress.hidden);
+      assert.equal(progress.value, 100);
+      assert.equal(
+        win!.document.activeElement,
+        win!.document.getElementById("paralens-backend"),
+      );
+      const provider = win!.document.getElementById(
+        "paralens-provider",
+      ) as HTMLSelectElement;
+      const originalProvider = provider.value;
+      provider.focus();
+      provider.value = "deepseek";
+      provider.dispatchEvent(
+        new (win as Window & { Event: typeof Event }).Event("change", {
+          bubbles: true,
+        }),
+      );
+      assert.equal(
+        (win!.document.getElementById("paralens-model") as HTMLInputElement)
+          .value,
+        "deepseek-flash",
+      );
+      assert.equal(win!.document.activeElement, provider);
+      provider.value = originalProvider;
+      provider.dispatchEvent(
+        new (win as Window & { Event: typeof Event }).Event("change", {
+          bubbles: true,
+        }),
       );
       const syncArgs = (await IOUtils.readUTF8(record)).trim().split(/\r?\n/);
       assert.deepEqual(syncArgs, [

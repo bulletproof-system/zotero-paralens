@@ -18,7 +18,7 @@ buildSync({
 const { BACKENDS, resolveBackend, backendInstallArguments } = require(
   path.join(outdir, "selection.cjs"),
 );
-const { isBackendInstalled } = require(
+const { isBackendInstalled, inspectBackendInstallation } = require(
   path.join(outdir, "installationStatus.cjs"),
 );
 
@@ -133,5 +133,39 @@ test("settings probe rejects a pinned distribution whose worker imports fail", a
       true,
     ),
     false,
+  );
+});
+
+test("backend inspection distinguishes absent environments, incompatible versions and broken imports", async () => {
+  global.PathUtils = { join: path.join };
+  const inspect = (exists, execute) =>
+    inspectBackendInstallation("/profile/backend", false, exists, execute);
+  assert.equal(
+    await inspect(
+      async () => false,
+      async () => true,
+    ),
+    "missing",
+  );
+  assert.equal(
+    await inspect(
+      async () => true,
+      async () => false,
+    ),
+    "incompatible",
+  );
+  assert.equal(
+    await inspect(
+      async () => true,
+      async (_binary, args) => !args[1].includes("high_level"),
+    ),
+    "broken",
+  );
+  assert.equal(
+    await inspect(
+      async () => true,
+      async () => true,
+    ),
+    "ready",
   );
 });

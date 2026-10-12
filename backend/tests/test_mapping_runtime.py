@@ -132,7 +132,7 @@ class WorkerErrorBoundaryTests(unittest.TestCase):
                 with self.assertRaises(SystemExit) as exited: worker.main()
                 self.assertEqual(exited.exception.code, 1)
                 error = json.loads((job / "error.json").read_text())
-                self.assertEqual(error, {"schemaVersion": 1, "stage": "mapping", "code": "memory_exhausted"})
+                self.assertEqual(error, {"schemaVersion": 1, "stage": "mapping", "code": "memory_exhausted", "exceptionType": "MemoryError"})
                 self.assertNotIn("PRIVATE", (job / "error.json").read_text())
                 (job / "cancel").write_text("")
                 with self.assertRaises(SystemExit): worker.main()

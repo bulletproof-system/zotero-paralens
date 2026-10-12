@@ -28,3 +28,10 @@ pref-legal-archive = Download release source archive
 
 pref-auto-repair = Automatically repair suspected untranslated paragraphs (off by default)
 pref-auto-repair-note = By default, only check for untranslated text without extra API calls; suspected omissions or check errors do not prevent attempting to retain the PDF. Enable only for new queued jobs: at most two repair attempts per paragraph, with extra API costs and waiting time. Failed repairs do not block retaining the translation.
+
+pref-backend-progress =
+    .aria-label = Backend installation progress
+pref-save-logs = Save logs in the plugin folder (takes effect immediately)
+pref-save-logs-note = Off by default. Saves daily plugin, backend installation and translation status logs under paralens/logs in the Zotero profile; API keys and document text are excluded. Turning this off stops writing and retains existing logs.
+
+pref-backend-check = Check backend

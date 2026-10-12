@@ -12,3 +12,4 @@ pref("translationConcurrency", 4);
 pref("translationQps", 2);
 
 pref("autoRepair", false);
+pref("saveLogs", false);

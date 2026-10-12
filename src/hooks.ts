@@ -1,3 +1,4 @@
+import { log, flushLogs } from "./utils/log";
 import { installBundledBackend } from "./backend/install";
 import { inspectUV } from "./backend/uvRuntime";
 import { registerPrefsScripts } from "./modules/preferenceScript";
@@ -12,6 +13,7 @@ import {
 } from "./reader/translationWorkflow";
 
 async function onStartup(): Promise<void> {
+  log("插件启动");
   // Deploy packaged scripts even if the Reader UI is not yet ready.
   try {
     addon.data.backendProjectDir = await installBundledBackend(rootURI);
@@ -23,7 +25,7 @@ async function onStartup(): Promise<void> {
             .slice(0, 40)
         : "UnknownError";
     addon.data.backendInstallError = `后端脚本安装失败（${reason}）；请检查插件包及 Zotero 配置目录。`;
-    Zotero.debug(`[ParaLens] 后端脚本安装失败（${reason}）`);
+    log(`[ParaLens] 后端脚本安装失败（${reason}）`);
   }
 
   await Promise.all([
@@ -48,7 +50,7 @@ async function onStartup(): Promise<void> {
     };
   }
   if (!addon.data.uv.available) {
-    Zotero.debug(`[ParaLens] ${addon.data.uv.message}`);
+    log(`[ParaLens] ${addon.data.uv.message}`);
   }
   // On a hot/temporary install Zotero may already have a main window open,
   // so onMainWindowLoad will not fire for it. The menu helper is idempotent.
@@ -58,7 +60,7 @@ async function onStartup(): Promise<void> {
   try {
     await initializeTranslationQueue();
   } catch {
-    Zotero.debug("[ParaLens] 任务队列读取失败，请检查配置目录");
+    log("[ParaLens] 任务队列读取失败，请检查配置目录");
   }
   // Missing uv must not prevent opening the preferences page or finish startup.
   addon.data.initialized = true;
@@ -72,7 +74,9 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   unregisterTranslationMenu(win);
 }
 
-function onShutdown(): void {
+async function onShutdown(): Promise<void> {
+  log("插件关闭");
+  await flushLogs();
   addon.data.alive = false;
   unregisterAllTranslationMenus();
   detachBilingual();

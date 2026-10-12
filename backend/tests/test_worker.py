@@ -338,4 +338,37 @@ class AdapterTests(unittest.TestCase):
             self.assertFalse(config.exists())
 
 
+class WorkerErrorClassificationTests(unittest.TestCase):
+    def test_scanned_pdf_and_text_layer_errors_are_not_provider_errors(self):
+        for name, code in (("ScannedPDFError", "pdf_scanned"),
+                           ("ExtractTextError", "pdf_text_extraction"),
+                           ("InputFileGeneratedByBabelDOCError", "pdf_already_translated")):
+            error = type(name, (Exception,), {})("PRIVATE_KEY PRIVATE_DOCUMENT")
+            status = worker.safe_job_error(error, "translation")
+            self.assertEqual(status["code"], code)
+            self.assertNotIn("PRIVATE", json.dumps(status))
+            wrapper = RuntimeError("PRIVATE_TRACE")
+            wrapper.__cause__ = error
+            self.assertEqual(worker.safe_job_error(wrapper, "translation")["code"], code)
+
+    def test_worker_persists_safe_detection_diagnostics_without_exception_text(self):
+        error = type("ScannedPDFError", (Exception,), {})("PRIVATE_KEY PRIVATE_DOCUMENT")
+        with tempfile.TemporaryDirectory() as folder:
+            job = Path(folder)
+            async def fail(data, source, directory, diagnostics):
+                diagnostics.update(stage="translation", backendStage="DetectScannedFile")
+                raise error
+            with patch.object(sys, "argv", ["worker.py", "private-config"]), \
+                 patch.object(worker, "load_config", return_value=({}, job / "source.pdf", job)), \
+                 patch.object(worker, "run", side_effect=fail):
+                with self.assertRaises(SystemExit) as caught:
+                    worker.main()
+            self.assertEqual(caught.exception.code, 1)
+            status = json.loads((job / "error.json").read_text())
+            self.assertEqual(status["code"], "pdf_scanned")
+            self.assertEqual(status["exceptionType"], "ScannedPDFError")
+            self.assertEqual(status["backendStage"], "DetectScannedFile")
+            self.assertNotIn("PRIVATE", json.dumps(status))
+
+
 if __name__ == "__main__": unittest.main()

@@ -87,3 +87,26 @@ test("quality-stage internal failures are reported as a retained PDF warning", (
   assert.match(message, /已跳过该步骤并尝试保留译文/);
   assert.ok(!message.includes("PRIVATE"));
 });
+
+test("scanned documents receive PDF-specific guidance instead of an API error", () => {
+  const message = describeJobFailure({
+    schemaVersion: 1,
+    stage: "translation",
+    code: "pdf_scanned",
+    message: "PRIVATE_TEXT",
+  });
+  assert.match(message, /扫描件.*OCR/);
+  assert.doesNotMatch(message, /API 配置|PRIVATE/);
+});
+
+test("other failures during scan detection direct users to the PDF rather than provider settings", () => {
+  const message = describeJobFailure({
+    schemaVersion: 1,
+    stage: "translation",
+    code: "translation_failed",
+    backendStage: "DetectScannedFile",
+    exceptionType: "ValueError",
+  });
+  assert.match(message, /PDF 扫描检测阶段失败/);
+  assert.doesNotMatch(message, /API 配置/);
+});

@@ -1,4 +1,4 @@
-﻿/** Keep both documents in native Zotero Reader windows and tile them on one display. */
+import { log } from "../utils/log"; /** Keep both documents in native Zotero Reader windows and tile them on one display. */
 export function tileReaderWindows(
   source: { _window?: Window },
   target: { _window?: Window },
@@ -26,7 +26,7 @@ export function tileReaderWindows(
     right.moveTo(x + width, y);
     return true;
   } catch {
-    Zotero.debug(
+    log(
       "[ParaLens] 当前窗口管理器不允许自动并排，请手动排列两个原生 Reader 窗口",
     );
     return false;

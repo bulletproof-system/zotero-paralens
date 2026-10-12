@@ -22,6 +22,10 @@ const errors: Record<string, string> = {
   storage_failure: "文件读写失败，请检查磁盘空间、权限及文件占用",
   file_missing: "必要文件不存在，请检查 PDF、模型缓存和后端安装",
   pdf_invalid: "PDF 无法解析，请检查文件是否损坏或加密",
+  pdf_scanned:
+    "PDF 被识别为扫描件或缺少可用文本层；当前不支持 OCR，请换用可选择、复制正文的原始 PDF",
+  pdf_text_extraction: "PDF 文本提取失败，请检查文本层、字体和文件完整性",
+  pdf_already_translated: "输入文件已由 BabelDOC 生成，请选择原始 PDF 进行翻译",
   backend_load_failed: "后端加载失败，请在设置中检查或重新安装后端",
   model_load_failed: "布局模型加载失败，请检查模型缓存和网络",
   translation_failed: "翻译或排版失败，请检查 PDF、模型和 API 配置",
@@ -81,5 +85,12 @@ export function describeJobFailure(value: unknown): string {
       }
     }
   }
-  return `${stages[record.stage]}：${errors[record.code]}${detail}（${record.code}）`;
+  const message =
+    record.code === "translation_failed" &&
+    record.backendStage === "DetectScannedFile"
+      ? "PDF 扫描检测阶段失败；请检查文本层、图片和 PDF 完整性"
+      : errors[record.code];
+  return (
+    stages[record.stage] + "：" + message + detail + "（" + record.code + "）"
+  );
 }

@@ -1,3 +1,4 @@
+import { log } from "../utils/log";
 import { translationPerformance } from "../backend/performance";
 import { TranslationJobProgress } from "../backend/contracts";
 import { executeHidden } from "../backend/process";
@@ -195,7 +196,7 @@ export async function openTranslationQueue(win: Window): Promise<void> {
             return;
           }
         } catch {
-          Zotero.debug("[ParaLens] 部分译文映射无法打开；保留译文仍可直接阅读");
+          log("[ParaLens] 部分译文映射无法打开；保留译文仍可直接阅读");
         }
         await Zotero.Reader.open(target.id);
         return;
@@ -477,7 +478,7 @@ async function translateAttachment(
       try {
         await importedTarget.eraseTx();
       } catch {
-        Zotero.debug(
+        log(
           "[ParaLens] Could not remove the incomplete translation attachment",
         );
       }
@@ -555,7 +556,7 @@ export async function openBilingual(
     await new Promise<void>((resolve) => setTimeout(resolve, 250));
   }
   // The translation and both Reader tabs still work if Zotero's internal DOM changed.
-  Zotero.debug("[ParaLens] Reader overlay unavailable on this Zotero version");
+  log("[ParaLens] Reader overlay unavailable on this Zotero version");
   return false;
 }
 

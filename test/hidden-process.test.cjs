@@ -17,6 +17,7 @@ const { describeJobFailure } = require(
   path.resolve(".scaffold/jobError-unit.cjs"),
 );
 global.PathUtils = { isAbsolute: path.isAbsolute };
+global.Zotero = { debug() {}, Prefs: { get: () => false } };
 function setup(topic = "process-finished", code = 0, startError = false) {
   const calls = [];
   global.Components = {
