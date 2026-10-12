@@ -5,6 +5,7 @@ The config path is the sole CLI argument. No API credentials in argv/status/logs
 import asyncio
 import copy
 import json
+from importlib.metadata import version
 import math
 import os
 import re
@@ -796,6 +797,61 @@ def safe_job_error(error, stage):
     return {"schemaVersion": 1, "stage": stage, "code": code}
 
 
+def safe_exception_diagnostics(error):
+    """Only exception identifiers and code locations; no messages, source or locals."""
+    known = {
+        "ScannedPDFError", "ExtractTextError", "InputFileGeneratedByBabelDOCError",
+        "ValueError", "RuntimeError", "ImportError", "ModuleNotFoundError",
+        "AttributeError", "AssertionError", "TypeError", "OSError", "MemoryError",
+        "ProviderJobError", "PermissionError", "FileNotFoundError", "TimeoutError",
+        "AuthenticationError", "PermissionDeniedError", "RateLimitError",
+        "APIConnectionError", "APITimeoutError", "ConnectTimeout", "ReadTimeout",
+        "BadRequestError", "NotFoundError", "InternalServerError", "FileDataError",
+        "EmptyFileError", "IncompleteTranslationError", "CancelledError",
+        "KeyError", "IndexError", "ZeroDivisionError", "UnicodeEncodeError",
+        "UnicodeDecodeError", "BrokenPipeError", "ConnectionError",
+    }
+    chain, seen = [], set()
+    current = error
+    for _ in range(4):
+        if current is None or id(current) in seen:
+            break
+        seen.add(id(current))
+        name = type(current).__name__
+        entry = {"type": name if name in known else "UnknownError"}
+        for key in ("errno", "winerror"):
+            value = getattr(current, key, None)
+            if type(value) is int:
+                entry[key] = value
+        frames = []
+        trace = current.__traceback__
+        while trace is not None:
+            code = trace.tb_frame.f_code
+            filename = Path(code.co_filename).name
+            function = code.co_name
+            # Never use traceback.format_exc(): it contains private error text
+            # and source lines, which can include request bodies and keys.
+            frames.append({
+                "file": filename if re.fullmatch(r"[A-Za-z0-9_.-]{1,100}\.py", filename) else "unknown",
+                "function": function if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,119}", function) else "unknown",
+                "line": trace.tb_lineno,
+            })
+            trace = trace.tb_next
+        entry["frames"] = frames[-8:]
+        chain.append(entry)
+        current = current.__cause__ or current.__context__
+    try:
+        babeldoc_version = version("babeldoc")
+    except Exception:
+        # Damaged package metadata must not hide the original job failure.
+        babeldoc_version = "unavailable"
+    return {
+        "exceptionType": chain[0]["type"],
+        "exceptionChain": chain,
+        "runtime": {"python": ".".join(map(str, sys.version_info[:3])), "babeldoc": babeldoc_version},
+    }
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("Usage: worker.py <private-job-config>")
@@ -807,9 +863,7 @@ def main():
     except (Exception, asyncio.CancelledError) as error:
         status = ({"schemaVersion": 1, "stage": "cancelled", "code": "cancelled"}
                   if (job / "cancel").exists() else safe_job_error(error, diagnostics["stage"]))
-        # Persist only identifiers, never exception messages or traceback source lines.
-        name = type(error).__name__
-        status["exceptionType"] = name if name in {"ScannedPDFError", "ExtractTextError", "InputFileGeneratedByBabelDOCError", "ValueError", "RuntimeError", "ImportError", "ModuleNotFoundError", "AttributeError", "AssertionError", "TypeError", "OSError", "MemoryError", "ProviderJobError"} else "UnknownError"
+        status.update(safe_exception_diagnostics(error))
         if "backendStage" in diagnostics:
             status["backendStage"] = diagnostics["backendStage"]
         try:

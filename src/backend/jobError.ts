@@ -94,3 +94,79 @@ export function describeJobFailure(value: unknown): string {
     stages[record.stage] + "：" + message + detail + "（" + record.code + "）"
   );
 }
+
+/** Bounded metadata only: never serialize a worker record or exception message. */
+export function diagnosticLabel(value: unknown): string {
+  return typeof value === "string" &&
+    value.length <= 120 &&
+    /^[A-Za-z0-9_ .:/+()\-\u3400-\u9fff]+$/.test(value)
+    ? value
+    : "unknown";
+}
+
+export function describeJobDiagnostics(value: unknown): string {
+  if (!value || typeof value !== "object") return "诊断格式无效";
+  const record = value as Record<string, unknown>;
+  if (record.schemaVersion !== 1) return "诊断版本无效";
+  const detail: Record<string, unknown> = {
+    stage:
+      typeof record.stage === "string" && Object.hasOwn(stages, record.stage)
+        ? record.stage
+        : "unknown",
+    code:
+      typeof record.code === "string" && Object.hasOwn(errors, record.code)
+        ? record.code
+        : "unknown",
+    backendStage: diagnosticLabel(record.backendStage),
+    exceptionType: diagnosticLabel(record.exceptionType),
+  };
+  if (record.runtime && typeof record.runtime === "object") {
+    const runtime = record.runtime as Record<string, unknown>;
+    detail.runtime = {
+      python: diagnosticLabel(runtime.python),
+      babeldoc: diagnosticLabel(runtime.babeldoc),
+    };
+  }
+  if (Array.isArray(record.exceptionChain)) {
+    detail.exceptionChain = record.exceptionChain
+      .slice(0, 4)
+      .map((item: unknown) => {
+        if (!item || typeof item !== "object") return { type: "unknown" };
+        const exception = item as Record<string, unknown>;
+        const entry: Record<string, unknown> = {
+          type: diagnosticLabel(exception.type),
+        };
+        if (
+          typeof exception.errno === "number" &&
+          Number.isSafeInteger(exception.errno)
+        )
+          entry.errno = exception.errno;
+        if (
+          typeof exception.winerror === "number" &&
+          Number.isSafeInteger(exception.winerror)
+        )
+          entry.winerror = exception.winerror;
+        if (Array.isArray(exception.frames))
+          entry.frames = exception.frames.slice(-8).map((item: unknown) => {
+            if (!item || typeof item !== "object") return {};
+            const frame = item as Record<string, unknown>;
+            return {
+              file:
+                typeof frame.file === "string" &&
+                /^[A-Za-z0-9_.-]{1,100}\.py$/.test(frame.file)
+                  ? frame.file
+                  : "unknown",
+              function: diagnosticLabel(frame.function),
+              line:
+                typeof frame.line === "number" &&
+                Number.isSafeInteger(frame.line) &&
+                frame.line > 0
+                  ? frame.line
+                  : undefined,
+            };
+          });
+        return entry;
+      });
+  }
+  return JSON.stringify(detail);
+}

@@ -1,6 +1,10 @@
 import { log } from "../utils/log";
 import { translationPerformance } from "./performance";
-import { describeJobFailure } from "./jobError";
+import {
+  describeJobFailure,
+  describeJobDiagnostics,
+  diagnosticLabel,
+} from "./jobError";
 import { bundledBackendProjectDir } from "./install";
 import {
   TranslationBackend,
@@ -99,8 +103,34 @@ export class BabelDocBackend implements TranslationBackend {
     if (!apiKey) throw new Error("请先在 ParaLens 设置中保存翻译 API Key");
     const configFile = await IOUtils.createUniqueFile(job, "config-", 0o600);
     this.job = job;
-    log("开始 BabelDOC 翻译");
+    const started = Date.now();
+    const prefix = "[" + PathUtils.filename(job) + "] ";
+    const jobLog = (message: string) => log(prefix + message);
+    jobLog(
+      "开始 BabelDOC 翻译；后端版本=" +
+        this.version +
+        "；服务=" +
+        selected.provider +
+        "；模型=" +
+        diagnosticLabel(selected.model) +
+        "；API 主机=" +
+        new URL(selected.baseURL).origin +
+        "；语言=" +
+        diagnosticLabel(request.sourceLanguage) +
+        "→" +
+        diagnosticLabel(request.targetLanguage) +
+        "；并发=" +
+        performance.concurrency +
+        "；QPS=" +
+        performance.qps +
+        "；自动补译=" +
+        (request.autoRepair === true),
+    );
+    jobLog("作业诊断目录=" + job);
     let lastLoggedPercent = -1;
+    let lastObservedPercent = -1;
+    let lastLoggedStage = "";
+    let frontendStep = "写入作业配置";
     try {
       await IOUtils.writeJSON(configFile, {
         sourcePath: PathUtils.normalize(request.sourcePath),
@@ -116,6 +146,7 @@ export class BabelDocBackend implements TranslationBackend {
       // Cancel before spawning any worker if the UI requested it during setup.
       if (this.cancelRequested) throw new TranslationCancelledError();
       // The worker atomically updates progress.json. Never read its private config again.
+      frontendStep = "运行翻译后端";
       const process = runUVWorker(
         this.uvStatus(),
         project,
@@ -134,42 +165,67 @@ export class BabelDocBackend implements TranslationBackend {
         },
       );
       let last = "";
-      while (!finished) {
-        if (onProgress) {
-          const path = PathUtils.join(job, "progress.json");
+      const readProgress = async (final = false) => {
+        const path = PathUtils.join(job, "progress.json");
+        try {
           if (await IOUtils.exists(path)) {
-            try {
-              const raw = await IOUtils.readUTF8(path);
-              if (raw !== last) {
-                last = raw;
-                const update = JSON.parse(raw) as TranslationJobProgress;
-                if (
-                  typeof update.percent === "number" &&
-                  Number.isFinite(update.percent)
-                ) {
-                  const percent = Math.max(
-                    0,
-                    Math.min(100, Math.floor(update.percent)),
-                  );
-                  if (percent >= lastLoggedPercent + 5) {
-                    log("BabelDOC 翻译进度：" + percent + "%");
-                    lastLoggedPercent = percent;
-                  }
-                }
-                onProgress({
+            const raw = await IOUtils.readUTF8(path);
+            if (raw !== last) {
+              last = raw;
+              const update = JSON.parse(raw) as TranslationJobProgress;
+              const stage = diagnosticLabel(update.stage);
+              const percent =
+                typeof update.percent === "number" &&
+                Number.isFinite(update.percent)
+                  ? Math.max(0, Math.min(100, Math.floor(update.percent)))
+                  : undefined;
+              if (percent !== undefined) lastObservedPercent = percent;
+              if (
+                final ||
+                stage !== lastLoggedStage ||
+                (percent !== undefined && percent >= lastLoggedPercent + 5)
+              ) {
+                const counter = (value: unknown) =>
+                  typeof value === "number" &&
+                  Number.isSafeInteger(value) &&
+                  value >= 0
+                    ? String(value)
+                    : "?";
+                jobLog(
+                  "BabelDOC 翻译进度：" +
+                    (percent === undefined ? "未知" : percent + "%") +
+                    "；阶段=" +
+                    stage +
+                    "；完成=" +
+                    counter(update.completed) +
+                    "/" +
+                    counter(update.total),
+                );
+                lastLoggedStage = stage;
+                if (percent !== undefined) lastLoggedPercent = percent;
+              }
+              try {
+                onProgress?.({
                   stage: update.stage,
                   completed: update.completed,
                   total: update.total,
                   percent: update.percent,
                 });
+              } catch {
+                /* Closing a UI must not interrupt the worker or its diagnostics. */
               }
-            } catch {
-              /* A callback failure must not interrupt the child process. */
             }
           }
+        } catch {
+          jobLog("无法读取或解析 progress.json；继续等待后端；未记录原始内容");
         }
+      };
+      while (!finished) {
+        await readProgress();
         await new Promise<void>((resolve) => setTimeout(resolve, 250));
       }
+      // Capture a final stage written immediately before the process exits.
+      await readProgress(true);
       // Wait for the child to exit rather than detaching a potentially
       // billable subprocess. Never import a result after cancellation.
       if (this.cancelRequested) throw new TranslationCancelledError();
@@ -179,18 +235,25 @@ export class BabelDocBackend implements TranslationBackend {
           failureDetail = await IOUtils.readJSON(
             PathUtils.join(job, "error.json"),
           );
-          log(describeJobFailure(failureDetail));
+          jobLog(describeJobFailure(failureDetail));
+          jobLog("后端失败诊断=" + describeJobDiagnostics(failureDetail));
         } catch {
-          /* Older workers/abrupt exits may have no structured error. */
+          jobLog(
+            "无法读取 error.json；后端可能异常退出或未写入诊断；最后阶段=" +
+              lastLoggedStage,
+          );
         }
       }
       const resultPath = PathUtils.join(job, "result.json");
-      if (!(await IOUtils.exists(resultPath)))
+      if (!(await IOUtils.exists(resultPath))) {
+        jobLog("未生成 result.json；最后阶段=" + lastLoggedStage);
         throw new Error(
           failure
             ? describeJobFailure(failureDetail)
             : "BabelDOC 未写入作业结果",
         );
+      }
+      frontendStep = "读取作业结果";
       const result = (await IOUtils.readJSON(resultPath)) as {
         translatedPdfPath: string;
         mappingDraftPath: string;
@@ -201,6 +264,8 @@ export class BabelDocBackend implements TranslationBackend {
         throw new Error(describeJobFailure(failureDetail));
       if (result.completion !== undefined && result.completion !== "partial")
         throw new Error("BabelDOC 结果完成状态不合法");
+      frontendStep = "校验输出文件位置";
+      jobLog("开始校验译文文件、段落映射和 PDF 摘要");
       const pdf = PathUtils.join(job, "translated.pdf");
       const draft = PathUtils.join(job, "mapping.v1.json");
       if (
@@ -210,6 +275,7 @@ export class BabelDocBackend implements TranslationBackend {
       ) {
         throw new Error("BabelDOC 输出文件位置不合法或不存在");
       }
+      frontendStep = "校验段落映射";
       const mapping = (await IOUtils.readJSON(draft)) as UnboundMappingV1;
       // Validate untrusted worker output without binding arbitrary Zotero attachment keys.
       validateMapping({
@@ -217,6 +283,7 @@ export class BabelDocBackend implements TranslationBackend {
         source: { ...mapping.source, attachmentKey: "source" },
         target: { ...mapping.target, attachmentKey: "target" },
       });
+      frontendStep = "校验 PDF 摘要";
       if (
         (await IOUtils.computeHexDigest(pdf, "sha256")).toLowerCase() !==
           mapping.target.sha256 ||
@@ -226,10 +293,15 @@ export class BabelDocBackend implements TranslationBackend {
       ) {
         throw new Error("BabelDOC 输出摘要与 PDF 不一致");
       }
-      log(
-        result.completion === "partial"
+      jobLog(
+        (result.completion === "partial"
           ? "BabelDOC 返回部分译文"
-          : "BabelDOC 翻译完成",
+          : "BabelDOC 翻译完成") +
+          "；映射段落数=" +
+          mapping.segments.length +
+          "；耗时=" +
+          (Date.now() - started) +
+          "ms",
       );
       return {
         translatedPdfPath: pdf,
@@ -242,7 +314,20 @@ export class BabelDocBackend implements TranslationBackend {
             : undefined,
       };
     } catch (error) {
-      log(this.cancelRequested ? "BabelDOC 翻译已取消" : "BabelDOC 翻译失败");
+      jobLog(
+        (this.cancelRequested ? "BabelDOC 翻译已取消" : "BabelDOC 翻译失败") +
+          "；前端步骤=" +
+          frontendStep +
+          "；最后阶段=" +
+          (lastLoggedStage || "尚无进度") +
+          "；进度=" +
+          (lastObservedPercent < 0 ? "未知" : lastObservedPercent + "%") +
+          "；异常类型=" +
+          diagnosticLabel(error instanceof Error ? error.name : undefined) +
+          "；耗时=" +
+          (Date.now() - started) +
+          "ms",
+      );
       throw error;
     } finally {
       this.job = undefined;

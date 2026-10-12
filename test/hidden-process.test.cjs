@@ -13,12 +13,22 @@ buildSync({
   outExtension: { ".js": ".cjs" },
 });
 const { executeHidden } = require(path.resolve(".scaffold/process-unit.cjs"));
-const { describeJobFailure } = require(
+const { describeJobFailure, describeJobDiagnostics } = require(
   path.resolve(".scaffold/jobError-unit.cjs"),
 );
 global.PathUtils = { isAbsolute: path.isAbsolute };
-global.Zotero = { debug() {}, Prefs: { get: () => false } };
-function setup(topic = "process-finished", code = 0, startError = false) {
+const diagnostics = [];
+global.Zotero = {
+  debug: (message) => diagnostics.push(message),
+  Prefs: { get: () => false },
+};
+function setup(
+  topic = "process-finished",
+  code = 0,
+  startError = false,
+  unavailableExit = false,
+) {
+  diagnostics.length = 0;
   const calls = [];
   global.Components = {
     interfaces: { nsIFile: "file", nsIProcess: "process" },
@@ -44,7 +54,13 @@ function setup(topic = "process-finished", code = 0, startError = false) {
               hidden: this.startHidden,
               noShell: this.noShell,
             });
-            this.exitValue = code;
+            if (unavailableExit)
+              Object.defineProperty(this, "exitValue", {
+                get() {
+                  throw Error("PRIVATE_EXIT_ERROR");
+                },
+              });
+            else this.exitValue = code;
             observer.observe(null, topic);
           },
         }),
@@ -114,4 +130,87 @@ test("worker diagnostics use whitelisted codes/stages, never untrusted messages 
     }),
     /鉴权失败/,
   );
+});
+
+test("process diagnostics distinguish failed termination from launch failure and tolerate missing exit codes", async () => {
+  setup("process-failed", 1);
+  await assert.rejects(
+    executeHidden(path.resolve("python.exe"), ["PRIVATE_ARGUMENT"]),
+  );
+  assert.match(
+    diagnostics.at(-1),
+    /后端进程异常结束.*process-failed.*退出码=1.*耗时=\d+ms/,
+  );
+  assert(!diagnostics.join(" ").includes("启动失败"));
+  assert(!diagnostics.join(" ").includes("PRIVATE_ARGUMENT"));
+  setup("process-failed", 0, false, true);
+  await assert.rejects(executeHidden(path.resolve("python.exe"), []));
+  assert.match(diagnostics.at(-1), /退出码=不可用/);
+  assert(!diagnostics.join(" ").includes("PRIVATE_EXIT_ERROR"));
+  setup("process-finished", 0, true);
+  await assert.rejects(executeHidden(path.resolve("python.exe"), []));
+  assert.match(diagnostics.at(-1), /启动失败.*异常类型=Error/);
+  assert(!diagnostics.join(" ").includes("PRIVATE_RAW_ERROR"));
+});
+test("detailed worker diagnostics include bounded code locations and versions without raw messages or locals", () => {
+  const detail = describeJobDiagnostics({
+    schemaVersion: 1,
+    stage: "translation",
+    code: "translation_failed",
+    backendStage: "Save PDF",
+    exceptionType: "RuntimeError",
+    runtime: { python: "3.12.8", babeldoc: "0.6.4", secret: "PRIVATE_RUNTIME" },
+    message: "PRIVATE_API_RESPONSE",
+    source: "PRIVATE_DOCUMENT",
+    exceptionChain: [
+      {
+        type: "OSError",
+        errno: 28,
+        winerror: 112,
+        message: "PRIVATE_MESSAGE",
+        frames: [
+          {
+            file: "high_level.py",
+            function: "safe_save",
+            line: 89,
+            source: "PRIVATE_SOURCE",
+            locals: "PRIVATE_KEY",
+          },
+        ],
+      },
+    ],
+  });
+  const record = JSON.parse(detail);
+  assert.equal(record.backendStage, "Save PDF");
+  assert.equal(record.exceptionChain[0].errno, 28);
+  assert.deepEqual(record.exceptionChain[0].frames[0], {
+    file: "high_level.py",
+    function: "safe_save",
+    line: 89,
+  });
+  assert.equal(record.runtime.python, "3.12.8");
+  assert(!detail.includes("PRIVATE_"));
+  const invalid = JSON.parse(
+    describeJobDiagnostics({
+      schemaVersion: 1,
+      stage: "__proto__",
+      code: "__proto__",
+      backendStage: "bad\nvalue",
+      exceptionChain: [
+        {
+          type: "RuntimeError",
+          frames: [
+            {
+              file: "C:/private/document.pdf",
+              function: "bad\nvalue",
+              line: -1,
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  assert.equal(invalid.stage, "unknown");
+  assert.equal(invalid.exceptionChain[0].frames[0].file, "unknown");
+  assert.equal(invalid.exceptionChain[0].frames[0].line, undefined);
 });

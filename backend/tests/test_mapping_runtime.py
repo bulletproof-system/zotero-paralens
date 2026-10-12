@@ -132,7 +132,12 @@ class WorkerErrorBoundaryTests(unittest.TestCase):
                 with self.assertRaises(SystemExit) as exited: worker.main()
                 self.assertEqual(exited.exception.code, 1)
                 error = json.loads((job / "error.json").read_text())
-                self.assertEqual(error, {"schemaVersion": 1, "stage": "mapping", "code": "memory_exhausted", "exceptionType": "MemoryError"})
+                self.assertEqual({key: error[key] for key in ("schemaVersion", "stage", "code", "exceptionType")},
+                                 {"schemaVersion": 1, "stage": "mapping", "code": "memory_exhausted", "exceptionType": "MemoryError"})
+                self.assertEqual(error["exceptionChain"][0]["type"], "MemoryError")
+                self.assertEqual(error["exceptionChain"][0]["frames"][-1]["function"], "failed")
+                self.assertIn("python", error["runtime"])
+                self.assertIn("babeldoc", error["runtime"])
                 self.assertNotIn("PRIVATE", (job / "error.json").read_text())
                 (job / "cancel").write_text("")
                 with self.assertRaises(SystemExit): worker.main()
@@ -140,6 +145,34 @@ class WorkerErrorBoundaryTests(unittest.TestCase):
                 with patch.object(worker, "atomic_json", side_effect=PermissionError("private")):
                     with self.assertRaises(SystemExit) as exited: worker.main()
                     self.assertEqual(exited.exception.code, 1)
+
+
+class SafeExceptionDiagnosticTests(unittest.TestCase):
+    def test_code_locations_and_chained_os_errors_exclude_messages_and_secrets(self):
+        try:
+            try:
+                raise OSError(28, "PRIVATE_KEY PRIVATE_PDF_TEXT", "/private/document.pdf")
+            except OSError as cause:
+                raise RuntimeError("PRIVATE_RESPONSE") from cause
+        except RuntimeError as error:
+            status = worker.safe_exception_diagnostics(error)
+        self.assertEqual(status["exceptionType"], "RuntimeError")
+        self.assertEqual([entry["type"] for entry in status["exceptionChain"]], ["RuntimeError", "OSError"])
+        self.assertEqual(status["exceptionChain"][1]["errno"], 28)
+        frame = status["exceptionChain"][0]["frames"][-1]
+        self.assertEqual(frame["file"], "test_mapping_runtime.py")
+        self.assertEqual(frame["function"], "test_code_locations_and_chained_os_errors_exclude_messages_and_secrets")
+        self.assertIsInstance(frame["line"], int)
+        self.assertNotIn("PRIVATE", json.dumps(status))
+        self.assertNotIn("document.pdf", json.dumps(status))
+
+    def test_unknown_exception_names_and_cycles_are_bounded(self):
+        error = type("PRIVATE_ERROR_NAME", (Exception,), {})("PRIVATE_MESSAGE")
+        error.__cause__ = error
+        status = worker.safe_exception_diagnostics(error)
+        self.assertEqual(status["exceptionType"], "UnknownError")
+        self.assertEqual(len(status["exceptionChain"]), 1)
+        self.assertNotIn("PRIVATE", json.dumps(status))
 
 
 class ProviderGuardTests(unittest.TestCase):

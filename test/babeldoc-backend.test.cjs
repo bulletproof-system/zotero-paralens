@@ -45,8 +45,10 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
       ],
     },
   };
+  const diagnosticLogs = [];
   let expectedAutoRepair = false;
   global.Zotero = {
+    debug: (message) => diagnosticLogs.push(message),
     Prefs: {
       get: (key) =>
         ({ provider: "openai", model: "gpt-4.1-mini", customBaseURL: "" })[
@@ -75,6 +77,16 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
             }),
           );
           await new Promise((resolve) => setTimeout(resolve, 350));
+          // A final stage can be written just before exit, at the same percent.
+          await fs.writeFile(
+            path.join(job, "progress.json"),
+            JSON.stringify({
+              stage: "Save PDF",
+              completed: 1,
+              total: 1,
+              percent: 36,
+            }),
+          );
           const pdf = Buffer.from("%PDF-1.7\ntranslated");
           await fs.writeFile(path.join(job, "translated.pdf"), pdf);
           await fs.writeFile(
@@ -154,6 +166,20 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
       ),
     );
     assert.equal(result.mapping.provenance.backend, "babeldoc");
+    assert(
+      diagnosticLogs.some((line) => /阶段=翻译段落.*完成=1\/1/.test(line)),
+    );
+    assert(diagnosticLogs.some((line) => /阶段=Save PDF/.test(line)));
+    assert(
+      diagnosticLogs.some((line) =>
+        line.includes("作业诊断目录=" + jobDirectory),
+      ),
+    );
+    assert(
+      diagnosticLogs.some((line) =>
+        /服务=openai.*模型=gpt-4.1-mini.*并发=4.*QPS=2/.test(line),
+      ),
+    );
     assert.equal(result.mapping.source.attachmentKey, undefined);
     assert.equal(
       await global.IOUtils.exists(path.join(jobDirectory, "config-1")),
@@ -279,6 +305,22 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
             schemaVersion: 1,
             stage: "translation",
             code: "api_auth",
+            backendStage: "Save PDF",
+            exceptionType: "RuntimeError",
+            runtime: { python: "3.12.8", babeldoc: "0.6.4" },
+            exceptionChain: [
+              {
+                type: "RuntimeError",
+                frames: [
+                  {
+                    file: "high_level.py",
+                    function: "safe_save",
+                    line: 90,
+                    source: "PRIVATE_TEXT",
+                  },
+                ],
+              },
+            ],
             message: "TEST_SECRET PRIVATE_TEXT",
           },
           /API 鉴权失败/,
@@ -333,6 +375,18 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
           false,
         );
       }
+      assert(
+        diagnosticLogs.some((line) =>
+          /后端失败诊断=.*RuntimeError.*safe_save/.test(line),
+        ),
+      );
+      assert(
+        diagnosticLogs.some((line) =>
+          /BabelDOC 翻译失败.*耗时=\d+ms/.test(line),
+        ),
+      );
+      assert(!diagnosticLogs.join(" ").includes("TEST_SECRET"));
+      assert(!diagnosticLogs.join(" ").includes("PRIVATE_TEXT"));
     } finally {
       global.Zotero.Utilities.Internal.exec = originalExec;
     }
