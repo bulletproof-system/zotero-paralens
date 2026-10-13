@@ -179,6 +179,61 @@ describe("ParaLens uv startup", function () {
     }
   });
 
+  it("offers OpenCode Zen and Go with fixed endpoints and Chat Completions guidance", async function () {
+    const pane = Zotero.PreferencePanes.pluginPanes.find(
+      (p) => p.pluginID === config.addonID,
+    );
+    const win = Zotero.Utilities.Internal.openPreferences(pane!.id!)!;
+    try {
+      let provider: HTMLSelectElement | null = null;
+      for (let i = 0; i < 40; i++) {
+        provider = win.document.getElementById(
+          "paralens-provider",
+        ) as HTMLSelectElement | null;
+        if (provider?.options.length) break;
+        await Zotero.Promise.delay(100);
+      }
+      assert.isNotNull(provider);
+      const model = win.document.getElementById(
+        "paralens-model",
+      ) as HTMLInputElement;
+      const base = win.document.getElementById(
+        "paralens-base-url",
+      ) as HTMLInputElement;
+      const note = win.document.getElementById(
+        "paralens-provider-note",
+      ) as HTMLElement;
+      for (const [id, endpoint] of [
+        ["opencode", "https://opencode.ai/zen/v1"],
+        ["opencode-go", "https://opencode.ai/zen/go/v1"],
+      ]) {
+        assert.isTrue(
+          Array.from(provider!.options).some((option) => option.value === id),
+        );
+        provider!.value = id;
+        provider!.dispatchEvent(
+          new (win as Window & { Event: typeof Event }).Event("change", {
+            bubbles: true,
+          }),
+        );
+        assert.equal(base.value, endpoint);
+        assert.isTrue(base.readOnly);
+        assert.equal(model.value, "");
+        assert.isFalse(note.hidden);
+        assert.include(note.textContent!, "Chat Completions");
+      }
+      provider!.value = "openai";
+      provider!.dispatchEvent(
+        new (win as Window & { Event: typeof Event }).Event("change", {
+          bubbles: true,
+        }),
+      );
+      assert.isTrue(note.hidden);
+    } finally {
+      win.close();
+    }
+  });
+
   it("renders the uv and API provider settings page", async function () {
     const pane = Zotero.PreferencePanes.pluginPanes.find(
       (p) => p.pluginID === config.addonID,

@@ -30,9 +30,24 @@ uv run --project <backend> --no-sync --offline python <backend/worker.py> <job-c
 
 ## 服务与设置
 
-当前只有 BabelDOC 翻译后端，使用 OpenAI 兼容 Chat Completions。设置页提供 OpenAI、OpenRouter、DeepSeek 和自定义兼容接口；预设和默认模型以 `src/backend/providers.ts` 为准，预填值不代表服务可用性或账户授权。
+当前只有 BabelDOC 翻译后端，使用 OpenAI 兼容 Chat Completions。设置页提供 OpenAI、OpenRouter、DeepSeek、OpenCode Zen、OpenCode Go 和自定义兼容接口；预设和默认模型以 `src/backend/providers.ts` 为准，预填值不代表服务可用性或账户授权。
 
 自定义接口需填写 Base URL、模型 ID 和 API Key。远程 URL 必须为 HTTPS，本机 loopback 可使用 HTTP；禁止 URL 内包含凭据、查询参数或片段。完整 `/v1/responses` 输入会在执行时规范为同主机 `/v1`，首选项保留输入值供编辑；这不表示 worker 使用 Responses API。自建 LiteLLM 网关可通过自定义兼容入口接入，插件不安装网关。
+
+### OpenCode Zen / Go
+
+在「翻译 API」选择 OpenCode Zen 或 OpenCode Go，填写模型 ID 和该服务的 API Key。Zen 和 Go 使用不同的凭据条目，互不覆盖；Go 的模型访问还取决于账户订阅。
+
+| 服务         | API Base URL                    |
+| ------------ | ------------------------------- |
+| OpenCode Zen | `https://opencode.ai/zen/v1`    |
+| OpenCode Go  | `https://opencode.ai/zen/go/v1` |
+
+仅支持官方列在 Chat Completions 端点的模型（例如 `glm-5.3-flash`），不默认选择模型。只支持 Responses 或 Messages 的模型暂不能通过当前 BabelDOC worker 使用；请根据 OpenCode 官方的 [Zen](https://opencode.ai/docs/zen/)／[Go](https://opencode.ai/docs/go/) 模型端点表选择。
+
+后端为每个翻译任务生成独立的随机会话 ID，自动附带 `x-opencode-session`、`x-opencode-session-id`、`x-opencode-client: paralens` 和 `User-Agent: ParaLens/<插件版本>`。会话 ID 在正文、重试和补译请求之间保持一致；新任务（包括手动重新开始）使用新 ID，不包含配置目录、文件名或文档信息。无需用户填写请求头。
+
+其中 `x-opencode-session` 用于满足 OpenCode 的会话路由要求；缺少它可能返回 `400 MissingSessionID`，参见 [上游问题 #47763](https://github.com/anomalyco/opencode/issues/47763) 和 [客户端请求头实现](https://github.com/anomalyco/opencode/blob/dev/packages/core/src/session/model-request.ts)。请求头作为 SDK 默认值设置，避免 BabelDOC 的逐请求 `extra_headers` 覆盖它们。只对 HTTPS 的官方主机及上述两个 Base URL 生效；自定义入口使用同样的官方地址时也会附带，其他服务不附带。请求头不会代替有效密钥、订阅或模型授权。
 
 | 设置                 | 默认值与范围 | 作用                                         |
 | -------------------- | ------------ | -------------------------------------------- |

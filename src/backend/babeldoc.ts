@@ -1,3 +1,4 @@
+import { version as pluginVersion } from "../../package.json";
 import { log } from "../utils/log";
 import { translationPerformance } from "./performance";
 import {
@@ -140,6 +141,7 @@ export class BabelDocBackend implements TranslationBackend {
         model: selected.model,
         baseURL: selected.baseURL,
         apiKey,
+        pluginVersion,
         autoRepair: request.autoRepair === true,
         ...performance,
       });

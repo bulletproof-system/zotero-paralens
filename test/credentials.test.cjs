@@ -125,3 +125,16 @@ test("async mutation failures reject without reporting success or changing the s
   await assert.rejects(deleteAPIKey("openai"), failure);
   assert.equal(await readAPIKey("openai"), "existing-key");
 });
+
+test("OpenCode Zen and Go keys remain separate from each other and other providers", async () => {
+  fixture();
+  await saveAPIKey("openai", "openai-key");
+  await saveAPIKey("opencode", "zen-key");
+  await saveAPIKey("opencode-go", "go-key");
+  assert.equal(await readAPIKey("opencode"), "zen-key");
+  assert.equal(await readAPIKey("opencode-go"), "go-key");
+  await deleteAPIKey("opencode");
+  assert.equal(await hasAPIKey("opencode"), false);
+  assert.equal(await readAPIKey("opencode-go"), "go-key");
+  assert.equal(await readAPIKey("openai"), "openai-key");
+});

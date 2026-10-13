@@ -144,3 +144,26 @@ test("translation concurrency and QPS are independent, bounded integers", () => 
   }
   assert.throws(() => translationPerformance(4, 11));
 });
+
+test("OpenCode Zen and Go presets use their own official Chat Completions bases", () => {
+  for (const [provider, baseURL] of [
+    ["opencode", "https://opencode.ai/zen/v1"],
+    ["opencode-go", "https://opencode.ai/zen/go/v1"],
+  ]) {
+    assert.equal(getProvider(provider).id, provider);
+    assert.equal(getProvider(provider).baseURL, baseURL);
+    assert.deepEqual(
+      resolveProviderConfig(
+        provider,
+        "glm-5.3-flash",
+        "https://ignored.invalid",
+      ),
+      {
+        provider,
+        model: "glm-5.3-flash",
+        baseURL,
+      },
+    );
+    assert.throws(() => resolveProviderConfig(provider, "", ""), /模型 ID/);
+  }
+});

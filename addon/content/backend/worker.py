@@ -14,6 +14,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -96,6 +97,33 @@ def load_config(path):
         raise ValueError("Invalid automatic repair option")
     data.update(performance_options(data))
     return data, source, job
+
+
+def configure_provider_client(translator, data):
+    """Attach OpenCode attribution only to its official Chat Completions bases.
+
+    The required x-opencode-session stays fixed for every request in one job,
+    including retries and optional repair. IDs contain no profile/PDF paths.
+    Keep these as SDK defaults: BabelDOC passes its own extra_headers per call.
+    """
+    from urllib.parse import urlsplit
+    url = urlsplit(data["baseURL"])
+    if (url.scheme != "https" or url.hostname != "opencode.ai"
+            or url.port not in (None, 443) or url.username or url.password
+            or url.query or url.fragment
+            or url.path.rstrip("/") not in ("/zen/v1", "/zen/go/v1")):
+        return False
+    session = "ses_" + uuid.uuid4().hex + uuid.uuid4().hex
+    plugin_version = data.get("pluginVersion", "unknown")
+    if not isinstance(plugin_version, str) or not re.fullmatch(r"[A-Za-z0-9.+-]{1,40}", plugin_version):
+        plugin_version = "unknown"
+    translator.client = translator.client.with_options(default_headers={
+        "x-opencode-session": session,
+        "x-opencode-session-id": session,
+        "x-opencode-client": "paralens",
+        "User-Agent": "ParaLens/" + plugin_version,
+    })
+    return True
 
 
 def translation_progress(event):
@@ -658,6 +686,7 @@ async def run(data, source, job, diagnostics=None):
             # include base_url. Never reuse a response from a different endpoint.
             ignore_cache=True,
         )
+        configure_provider_client(translator, data)
         cancellation = threading.Event()
         guard_api_response(translator, cancellation, performance)
         provider_state = guard_translator(translator, job, cancellation)

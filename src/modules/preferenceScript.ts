@@ -212,6 +212,19 @@ export async function registerPrefsScripts(win: Window): Promise<void> {
     base.value =
       preset.id === "custom" ? getPref("customBaseURL") || "" : preset.baseURL;
     base.readOnly = preset.id !== "custom";
+    const providerNote = doc.getElementById(
+      "paralens-provider-note",
+    ) as HTMLElement | null;
+    if (providerNote) {
+      const opencode = preset.id === "opencode" || preset.id === "opencode-go";
+      providerNote.hidden = !opencode;
+      providerNote.textContent = opencode
+        ? msg(
+            "请填写该服务支持 Chat Completions 的模型 ID（例如 glm-5.3-flash）。请求会自动携带 OpenCode 会话头；Go 需要有效订阅。仅支持 Responses 或 Messages 的模型暂不可用。",
+            "Enter a model ID supporting Chat Completions (e.g. glm-5.3-flash). OpenCode session headers are sent automatically; Go requires an active subscription. Responses-only and Messages-only models are not supported yet.",
+          )
+        : "";
+    }
     void showKey();
   };
   showUV();

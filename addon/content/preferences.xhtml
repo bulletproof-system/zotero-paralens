@@ -77,8 +77,13 @@
   </hbox>
   <hbox align="center">
     <html:label for="paralens-model" data-l10n-id="pref-model"></html:label>
-    <html:input id="paralens-model" type="text" />
+    <html:input
+      id="paralens-model"
+      type="text"
+      aria-describedby="paralens-provider-note"
+    />
   </hbox>
+  <html:p id="paralens-provider-note" hidden="hidden"></html:p>
   <hbox align="center">
     <html:label
       for="paralens-base-url"

@@ -1,5 +1,6 @@
 /** Only provider metadata is stored in Zotero preferences; never credentials. */
-export type ProviderId = "openai" | "openrouter" | "deepseek" | "custom";
+export type ProviderId =
+  "openai" | "openrouter" | "deepseek" | "opencode" | "opencode-go" | "custom";
 
 export interface ProviderPreset {
   id: ProviderId;
@@ -27,6 +28,18 @@ export const PROVIDERS: readonly ProviderPreset[] = [
     name: "DeepSeek",
     baseURL: "https://api.deepseek.com",
     suggestedModel: "deepseek-flash",
+  },
+  {
+    id: "opencode",
+    name: "OpenCode Zen",
+    baseURL: "https://opencode.ai/zen/v1",
+    suggestedModel: "",
+  },
+  {
+    id: "opencode-go",
+    name: "OpenCode Go (订阅)",
+    baseURL: "https://opencode.ai/zen/go/v1",
+    suggestedModel: "",
   },
   {
     id: "custom",
