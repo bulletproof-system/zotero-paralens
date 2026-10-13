@@ -1,8 +1,9 @@
 # ParaLens — Zotero PDF 全文翻译与双语对照
 
-[![Zotero](https://img.shields.io/badge/Zotero-10.0.3-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
+[![Zotero](https://img.shields.io/badge/Zotero-10-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
 [![开发状态](https://img.shields.io/badge/Status-Prototype-orange?style=flat-square)](#已知限制)
 [![使用 Zotero 插件模板](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)
+![Downloads release](https://img.shields.io/github/downloads/bulletproof-system/zotero-paralens/total?color=yellow)
 [![许可证](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 
 ParaLens 帮助你在 Zotero 中翻译整篇 PDF，并使用原生阅读器并排阅读原文和译文。悬停或点击段落，即可查看另一侧对应内容的高亮。
