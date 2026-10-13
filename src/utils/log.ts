@@ -7,14 +7,34 @@ export function pluginLogDirectory(): string {
 }
 
 /** Diagnostics only: never pass document text or a worker config. */
-export function redactLog(message: string): string {
+export function redactLog(
+  message: string,
+  secrets: readonly string[] = [],
+): string {
+  for (const secret of secrets) {
+    if (!secret) continue;
+    for (const value of [
+      secret,
+      encodeURIComponent(secret),
+      JSON.stringify(secret).slice(1, -1),
+    ])
+      message = message.split(value).join("[redacted]");
+  }
   return (
     message
       // eslint-disable-next-line no-control-regex -- Strip terminal ANSI escapes.
       .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-      .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, "$1[redacted]@")
+      .replace(/(https?:\/\/)[^\s/@]+@/gi, "$1[redacted]@")
       .replace(
-        /([?&](?:api[_-]?key|token|access_token|secret|password)=)[^\s&#]+/gi,
+        /("(?:authorization|api[_-]?key|access[_-]?token|password|secret|cookie|set-cookie|x-api-key)"\s*:\s*)"(?:\\.|[^"\\])*"/gi,
+        '$1"[redacted]"',
+      )
+      .replace(
+        /(\b(?:authorization|cookie|set-cookie|x-api-key)\s*[:=]\s*)[^\r\n]+/gi,
+        "$1[redacted]",
+      )
+      .replace(
+        /([?&](?:api[_-]?key|key|token|access_token|secret|password|signature|credential)=)[^\s&#]+/gi,
         "$1[redacted]",
       )
       .replace(
@@ -35,8 +55,8 @@ function loggingEnabled(): boolean {
 }
 
 /** Serialize appends; turning logging off also discards pending writes. */
-export function log(message: string): void {
-  const safe = redactLog(message);
+export function log(message: string, secrets: readonly string[] = []): void {
+  const safe = redactLog(message, secrets).replace(/[\r\n]+/g, " ");
   Zotero.debug?.(safe.startsWith("[ParaLens]") ? safe : "[ParaLens] " + safe);
   if (!loggingEnabled()) return;
   const timestamp = new Date().toISOString();

@@ -130,12 +130,16 @@ sys.addaudithook(local_only)
             print("LOCAL_JOB_DIRECTORY=" + str(job), flush=True)
             print("WORKER_PID=" + str(child.pid), flush=True)
             last = None
+            last_percent = 0
             while child.poll() is None:
                 try:
                     progress = json.loads((job / "progress.json").read_text(encoding="utf8"))
                     # Stage labels can originate in BabelDOC; report only numeric
                     # progress and a local request count, never provider text.
-                    state = (progress.get("percent"), requests)
+                    percent = progress.get("percent")
+                    assert isinstance(percent, (int, float)) and last_percent <= percent <= 97, "Worker progress regressed or completed too early"
+                    last_percent = percent
+                    state = (percent, requests)
                     if state != last:
                         print(json.dumps({"percent":state[0],"localRequests":state[1]}), flush=True)
                         last = state
@@ -167,8 +171,23 @@ sys.addaudithook(local_only)
     assert (job / "result.json").exists() and (job / "translated.pdf").exists()
     assert not config.exists(), "Private config was not consumed"
     assert mapping["source"]["sha256"] == original_hash
-    assert not any(path.name.startswith(("babeldoc-", "output-")) for path in job.iterdir()), "Temporary work files remained"
-    summary={"result":"completed","seconds":time.perf_counter()-start,"sourcePages":mapping["source"]["pageCount"],
+    result = json.loads((job / "result.json").read_text(encoding="utf8"))
+    partial = result.get("completion") == "partial"
+    retained = any(path.name.startswith(("babeldoc-", "output-")) for path in job.iterdir())
+    assert retained == partial, "Temporary artifact retention differs from completion status"
+    if partial:
+        assert (job / "partial-warning.json").exists() and (job / "artifact-retention.json").exists()
+    progress = json.loads((job / "progress.json").read_text(encoding="utf8"))
+    assert progress["percent"] == 97, "Worker final progress must leave attachment import pending"
+    diagnostic_text = (job / "diagnostics.json").read_text(encoding="utf8")
+    assert "local-test-only" not in diagnostic_text and source.name not in diagnostic_text, "Diagnostics included credentials or document identity"
+    diagnostics = json.loads(diagnostic_text)
+    assert diagnostics["api"]["requests"] == requests and diagnostics["api"]["activeRequests"] == 0
+    assert diagnostics["pdfSave"]["successful"] > 0
+    assert diagnostics["mapping"]["segments"] == len(mapping["segments"])
+    assert diagnostics["artifactsRetained"] == partial
+    assert all(stage in diagnostics["stageDurationsMs"] for stage in ("Save PDF", "修复字体字符映射", "写入 PDF 元数据"))
+    summary={"result":"partial" if partial else "completed","seconds":time.perf_counter()-start,"sourcePages":mapping["source"]["pageCount"],
              "targetPages":mapping["target"]["pageCount"],"segments":len(mapping["segments"]),"aligned":sum(item["status"]=="aligned" for item in mapping["segments"]),
              "localRequests":requests,"structuredRequests":batches,"sourceUnchanged":True}
     (directory / "summary.json").write_text(json.dumps(summary),encoding="utf8")

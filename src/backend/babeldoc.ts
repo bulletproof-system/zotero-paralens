@@ -4,6 +4,7 @@ import { translationPerformance } from "./performance";
 import {
   describeJobFailure,
   describeJobDiagnostics,
+  describeWorkerDiagnostics,
   diagnosticLabel,
 } from "./jobError";
 import { bundledBackendProjectDir } from "./install";
@@ -19,6 +20,7 @@ import { runUVWorker } from "./uvRunner";
 import { validateMapping } from "../mapping/validation";
 import { UnboundMappingV1 } from "../mapping/types";
 import { getPref } from "../utils/prefs";
+import { normalizeWorkerProgress } from "./progress";
 
 const root = () => PathUtils.join(PathUtils.profileDir, "paralens-jobs");
 
@@ -106,10 +108,12 @@ export class BabelDocBackend implements TranslationBackend {
     this.job = job;
     const started = Date.now();
     const prefix = "[" + PathUtils.filename(job) + "] ";
-    const jobLog = (message: string) => log(prefix + message);
+    const jobLog = (message: string) => log(prefix + message, [apiKey]);
     jobLog(
       "开始 BabelDOC 翻译；后端版本=" +
         this.version +
+        "；插件版本=" +
+        pluginVersion +
         "；服务=" +
         selected.provider +
         "；模型=" +
@@ -167,6 +171,24 @@ export class BabelDocBackend implements TranslationBackend {
         },
       );
       let last = "";
+      let observed: TranslationJobProgress | undefined;
+      let stageStarted = Date.now();
+      let lastHeartbeat = Date.now();
+      let readFailures = 0;
+      const readDiagnostics = async () => {
+        const diagnosticsPath = PathUtils.join(job, "diagnostics.json");
+        try {
+          if (await IOUtils.exists(diagnosticsPath))
+            jobLog(
+              "后端统计=" +
+                describeWorkerDiagnostics(
+                  await IOUtils.readJSON(diagnosticsPath),
+                ),
+            );
+        } catch {
+          jobLog("无法读取后端统计；未记录原始内容");
+        }
+      };
       const readProgress = async (final = false) => {
         const path = PathUtils.join(job, "progress.json");
         try {
@@ -174,7 +196,8 @@ export class BabelDocBackend implements TranslationBackend {
             const raw = await IOUtils.readUTF8(path);
             if (raw !== last) {
               last = raw;
-              const update = JSON.parse(raw) as TranslationJobProgress;
+              const update = normalizeWorkerProgress(JSON.parse(raw), observed);
+              observed = update;
               const stage = diagnosticLabel(update.stage);
               const percent =
                 typeof update.percent === "number" &&
@@ -193,6 +216,18 @@ export class BabelDocBackend implements TranslationBackend {
                   value >= 0
                     ? String(value)
                     : "?";
+                const stageChanged = stage !== lastLoggedStage;
+                const stageElapsed = stageChanged
+                  ? 0
+                  : Date.now() - stageStarted;
+                if (stageChanged && lastLoggedStage)
+                  jobLog(
+                    "阶段结束=" +
+                      lastLoggedStage +
+                      "；耗时=" +
+                      (Date.now() - stageStarted) +
+                      "ms",
+                  );
                 jobLog(
                   "BabelDOC 翻译进度：" +
                     (percent === undefined ? "未知" : percent + "%") +
@@ -201,8 +236,15 @@ export class BabelDocBackend implements TranslationBackend {
                     "；完成=" +
                     counter(update.completed) +
                     "/" +
-                    counter(update.total),
+                    counter(update.total) +
+                    "；阶段耗时=" +
+                    stageElapsed +
+                    "ms" +
+                    "；作业耗时=" +
+                    (Date.now() - started) +
+                    "ms",
                 );
+                if (stageChanged) stageStarted = Date.now();
                 lastLoggedStage = stage;
                 if (percent !== undefined) lastLoggedPercent = percent;
               }
@@ -219,15 +261,38 @@ export class BabelDocBackend implements TranslationBackend {
             }
           }
         } catch {
-          jobLog("无法读取或解析 progress.json；继续等待后端；未记录原始内容");
+          readFailures++;
+          if (readFailures === 1 || readFailures % 20 === 0)
+            jobLog(
+              "无法读取或解析 progress.json；失败次数=" +
+                readFailures +
+                "；继续等待后端；未记录原始内容",
+            );
         }
       };
       while (!finished) {
         await readProgress();
+        if (Date.now() - lastHeartbeat >= 15000) {
+          jobLog(
+            "后端仍在运行；阶段=" +
+              (lastLoggedStage || "等待进度") +
+              "；进度=" +
+              (lastObservedPercent < 0 ? "未知" : lastObservedPercent + "%") +
+              "；阶段耗时=" +
+              (Date.now() - stageStarted) +
+              "ms" +
+              "；作业耗时=" +
+              (Date.now() - started) +
+              "ms",
+          );
+          await readDiagnostics();
+          lastHeartbeat = Date.now();
+        }
         await new Promise<void>((resolve) => setTimeout(resolve, 250));
       }
       // Capture a final stage written immediately before the process exits.
       await readProgress(true);
+      await readDiagnostics();
       // Wait for the child to exit rather than detaching a potentially
       // billable subprocess. Never import a result after cancellation.
       if (this.cancelRequested) throw new TranslationCancelledError();
@@ -301,6 +366,16 @@ export class BabelDocBackend implements TranslationBackend {
           : "BabelDOC 翻译完成") +
           "；映射段落数=" +
           mapping.segments.length +
+          "；可信映射=" +
+          mapping.segments.filter((segment) => segment.status === "aligned")
+            .length +
+          "；不确定映射=" +
+          mapping.segments.filter((segment) => segment.status === "uncertain")
+            .length +
+          "；原文页数=" +
+          mapping.source.pageCount +
+          "；译文页数=" +
+          mapping.target.pageCount +
           "；耗时=" +
           (Date.now() - started) +
           "ms",

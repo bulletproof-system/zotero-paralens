@@ -94,8 +94,8 @@ class RepairTests(unittest.TestCase):
                 side_effect=lambda p: p.visible):
             stats = worker.repair_untranslated(engine(lambda *args, **kwargs: CHINESE), docs, Path(folder), threading.Event(), sources)
             self.assertEqual(stats["repaired"], 3)
-            self.assertEqual(updates[0]["percent"], 77)
-            self.assertEqual(updates[-1]["percent"], 85)
+            self.assertEqual(updates[0]["percent"], 75)
+            self.assertEqual(updates[-1]["percent"], 80)
             self.assertEqual(updates[-1]["completed"], 3)
             self.assertTrue(all(b["percent"] >= a["percent"] for a, b in zip(updates, updates[1:])))
             self.assertIn("第 2/3 段", updates[2]["stage"])

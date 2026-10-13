@@ -77,14 +77,31 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
             }),
           );
           await new Promise((resolve) => setTimeout(resolve, 350));
-          // A final stage can be written just before exit, at the same percent.
+          // The final worker update can regress; displayed progress stays monotonic.
           await fs.writeFile(
             path.join(job, "progress.json"),
             JSON.stringify({
               stage: "Save PDF",
               completed: 1,
               total: 1,
-              percent: 36,
+              percent: 20,
+            }),
+          );
+          await fs.writeFile(
+            path.join(job, "diagnostics.json"),
+            JSON.stringify({
+              schemaVersion: 1,
+              stage: "publish",
+              backendStage: "写入 PDF 元数据",
+              elapsedMs: 1000,
+              api: {
+                requests: 3,
+                retries: 1,
+                apiKey: "TEST_SECRET",
+                response: "PRIVATE_TEXT",
+              },
+              mapping: { segments: 1, aligned: 0, uncertain: 1 },
+              config: { apiKey: "TEST_SECRET" },
             }),
           );
           const pdf = Buffer.from("%PDF-1.7\ntranslated");
@@ -163,6 +180,22 @@ test("Zotero -> uv worker -> validated unbound mapping, no secrets in argv", asy
     assert.ok(
       reports.some(
         (progress) => progress.percent === 36 && progress.stage === "翻译段落",
+      ),
+    );
+    assert(
+      reports.some(
+        (progress) => progress.stage === "Save PDF" && progress.percent === 36,
+      ),
+    );
+    assert(
+      reports.every(
+        (progress, index) =>
+          index === 0 || progress.percent >= reports[index - 1].percent,
+      ),
+    );
+    assert(
+      diagnosticLogs.some((line) =>
+        /后端统计=.*"requests":3.*"retries":1/.test(line),
       ),
     );
     assert.equal(result.mapping.provenance.backend, "babeldoc");

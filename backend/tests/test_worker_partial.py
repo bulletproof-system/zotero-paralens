@@ -94,7 +94,7 @@ class PartialWorkerTests(unittest.TestCase):
             modules = {
                 "babeldoc.docvision.base_doclayout": types.SimpleNamespace(DocLayoutModel=Layout),
                 "babeldoc.format.pdf.high_level": types.SimpleNamespace(
-                    do_translate=translate, get_translation_stage=lambda config: []),
+                    do_translate=translate, get_translation_stage=lambda config: [], safe_save=lambda doc, target: doc.save(target), fix_cmap=lambda *args: None, add_metadata=lambda *args: None),
                 "babeldoc.progress_monitor": types.SimpleNamespace(ProgressMonitor=Monitor),
                 "babeldoc.format.pdf.translation_config": types.SimpleNamespace(
                     TranslationConfig=Config, WatermarkOutputMode=types.SimpleNamespace(NoWatermark=0)),

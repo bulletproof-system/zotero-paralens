@@ -103,3 +103,37 @@ test("credentials are redacted from both saved logs and Zotero diagnostics", asy
     assert(text.includes("[redacted]"));
   }
 });
+
+test("active credentials, JSON headers and URL userinfo are redacted before debug and file output", async () => {
+  const state = fixture();
+  state.enabled = true;
+  const key = "PRIVATE-credential-without-prefix";
+  const text =
+    "credential=" +
+    key +
+    ' {"Authorization":"Bearer PRIVATE_JSON with spaces", "apiKey":"PRIVATE_KEY"} https://PRIVATE_USER@example.invalid/?signature=PRIVATE_SIG';
+  log(text, [key]);
+  await flushLogs();
+  for (const output of [state.debug[0], state.writes[0].text]) {
+    assert(!output.includes("PRIVATE"), output);
+    assert(output.includes("[redacted]"));
+  }
+});
+
+test("encoded active secrets and complete cookie headers are removed", async () => {
+  const state = fixture();
+  state.enabled = true;
+  const secret = 'PRIVATE/credential"suffix';
+  log([secret, encodeURIComponent(secret), JSON.stringify(secret)].join(" "), [
+    secret,
+  ]);
+  log("Cookie: session=PRIVATE_SESSION; refresh=PRIVATE_REFRESH");
+  await flushLogs();
+  for (const output of [
+    ...state.debug,
+    ...state.writes.map((write) => write.text),
+  ]) {
+    assert(!output.includes("PRIVATE"), output);
+    assert(output.includes("[redacted]"));
+  }
+});

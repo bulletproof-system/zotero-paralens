@@ -53,6 +53,68 @@ class RuntimeMappingTests(unittest.TestCase):
             page.insert_text((50, 100), text)
             self.assertEqual(_refs(page, text, 0, {}), [])
 
+    def test_fragmented_font_spans_keep_long_verified_paragraphs_clickable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            snapshots = []
+            paths = []
+            for name, character in (("source", "A"), ("target", "B")):
+                path = root / (name + ".pdf")
+                with pymupdf.open() as doc:
+                    page = doc.new_page()
+                    for offset in range(132):
+                        page.insert_text(
+                            (40 + (offset % 12) * 18, 50 + (offset // 12) * 16),
+                            character, fontsize=9,
+                            fontname="hebo" if offset % 2 else "helv",
+                        )
+                    doc.save(path)
+                with pymupdf.open(path) as doc:
+                    page = doc[0]
+                    raw = page.get_text("rawdict")
+                    spans = [span for block in raw["blocks"] if block["type"] == 0
+                             for line in block["lines"] for span in line["spans"]]
+                    self.assertGreater(len(spans), 100)
+                    inverse = ~page.transformation_matrix
+                    compositions = []
+                    for span in spans:
+                        for char in span["chars"]:
+                            rect = pymupdf.Rect(char["bbox"]) * inverse
+                            compositions.append({"pdf_character": {
+                                "char_unicode": char["c"],
+                                "box": dict(zip(("x", "y", "x2", "y2"), rect)),
+                            }})
+                    paragraph = {
+                        "unicode": "".join(item["pdf_character"]["char_unicode"]
+                                           for item in compositions),
+                        "debug_id": "long-paragraph", "layout_id": 1,
+                        "pdf_paragraph_composition": compositions,
+                    }
+                    snapshots.append({"page": [{"pdf_paragraph": [paragraph]}]})
+                paths.append(path)
+            stages = []
+            for index, document in enumerate((snapshots[0], snapshots[1], snapshots[1])):
+                path = root / (str(index) + ".json")
+                path.write_text(json.dumps(document), encoding="utf-8")
+                stages.append(path)
+            mapping = make_mapping(*paths, *stages)
+            segment = mapping["segments"][0]
+            self.assertEqual(segment["status"], "aligned")
+            for side in ("source", "target"):
+                self.assertGreater(len(segment[side][0]["quads"]), 100)
+                self.assertTrue(all(0 <= point <= 1
+                                    for quad in segment[side][0]["quads"] for point in quad))
+            # A larger geometry budget must still reject stale character locations.
+            stale = json.loads(stages[2].read_text(encoding="utf-8"))
+            for composition in stale["page"][0]["pdf_paragraph"][0]["pdf_paragraph_composition"]:
+                composition["pdf_character"]["box"]["x"] += 300
+                composition["pdf_character"]["box"]["x2"] += 300
+            stale["page"][0]["pdf_paragraph"][0]["unicode"] = "not present in the PDF"
+            stages[2].write_text(json.dumps(stale), encoding="utf-8")
+            unsafe = make_mapping(*paths, *stages)
+            self.assertEqual(unsafe["segments"][0]["status"], "uncertain")
+            self.assertEqual(unsafe["segments"][0]["target"], [])
+
     def test_snapshots_keep_only_text_identity_and_debug_filter(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'snapshot.json'

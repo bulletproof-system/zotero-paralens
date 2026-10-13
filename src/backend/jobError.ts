@@ -99,7 +99,41 @@ export function describeJobFailure(value: unknown): string {
 export function diagnosticLabel(value: unknown): string {
   return typeof value === "string" &&
     value.length <= 120 &&
-    /^[A-Za-z0-9_ .:/+()\-\u3400-\u9fff]+$/.test(value)
+    /^[A-Za-z0-9_ .:/+()（）·\-\u3400-\u9fff]+$/.test(value)
+    ? value
+    : "unknown";
+}
+
+const workerStages = new Set([
+  ...Object.keys(stages),
+  "加载后端与模型",
+  "翻译段落",
+  "生成段落映射",
+  "保存翻译结果",
+  "检查译文漏译（不发起补译请求）",
+  "修复字体字符映射",
+  "写入 PDF 元数据",
+  "Parse PDF and Create Intermediate Representation",
+  "DetectScannedFile",
+  "Parse Page Layout",
+  "Parse Table",
+  "Parse Paragraphs",
+  "Parse Formulas and Styles",
+  "Extract Terms",
+  "Translate Paragraphs",
+  "Typesetting",
+  "Add Fonts",
+  "Generate drawing instructions",
+  "Subset font",
+  "Save PDF",
+]);
+
+export function workerStageLabel(value: unknown): string {
+  return typeof value === "string" &&
+    (workerStages.has(value) ||
+      /^补译未翻译的正文段落(?: · 第 [0-9]{1,7}\/[0-9]{1,7} 段 · 尝试 [0-9]{1,3}\/[0-9]{1,3})?$/.test(
+        value,
+      ))
     ? value
     : "unknown";
 }
@@ -117,7 +151,7 @@ export function describeJobDiagnostics(value: unknown): string {
       typeof record.code === "string" && Object.hasOwn(errors, record.code)
         ? record.code
         : "unknown",
-    backendStage: diagnosticLabel(record.backendStage),
+    backendStage: workerStageLabel(record.backendStage),
     exceptionType: diagnosticLabel(record.exceptionType),
   };
   if (record.runtime && typeof record.runtime === "object") {
@@ -125,8 +159,10 @@ export function describeJobDiagnostics(value: unknown): string {
     detail.runtime = {
       python: diagnosticLabel(runtime.python),
       babeldoc: diagnosticLabel(runtime.babeldoc),
+      pymupdf: diagnosticLabel(runtime.pymupdf),
     };
   }
+  if (record.operation === "pdf_save") detail.operation = record.operation;
   if (Array.isArray(record.exceptionChain)) {
     detail.exceptionChain = record.exceptionChain
       .slice(0, 4)
@@ -146,6 +182,15 @@ export function describeJobDiagnostics(value: unknown): string {
           Number.isSafeInteger(exception.winerror)
         )
           entry.winerror = exception.winerror;
+        for (const key of ["status_code", "code"]) {
+          const value = exception[key];
+          if (
+            typeof value === "number" &&
+            Number.isSafeInteger(value) &&
+            (key !== "status_code" || (value >= 100 && value <= 599))
+          )
+            entry[key] = value;
+        }
         if (Array.isArray(exception.frames))
           entry.frames = exception.frames.slice(-8).map((item: unknown) => {
             if (!item || typeof item !== "object") return {};
@@ -168,5 +213,114 @@ export function describeJobDiagnostics(value: unknown): string {
         return entry;
       });
   }
+  return JSON.stringify(detail);
+}
+
+/** Parse only numerical / fixed metadata, never serialize arbitrary worker records. */
+export function describeWorkerDiagnostics(value: unknown): string {
+  if (!value || typeof value !== "object") return "诊断格式无效";
+  const record = value as Record<string, unknown>;
+  if (record.schemaVersion !== 1) return "诊断版本无效";
+  const integer = (value: unknown) =>
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+      ? value
+      : undefined;
+  const fields = (value: unknown, names: readonly string[]) => {
+    const result: Record<string, number> = {};
+    if (value && typeof value === "object")
+      for (const name of names) {
+        const number = integer((value as Record<string, unknown>)[name]);
+        if (number !== undefined) result[name] = number;
+      }
+    return result;
+  };
+  const detail: Record<string, unknown> = {
+    stage:
+      typeof record.stage === "string" && Object.hasOwn(stages, record.stage)
+        ? record.stage
+        : "unknown",
+    backendStage: workerStageLabel(record.backendStage),
+    elapsedMs: integer(record.elapsedMs),
+  };
+  if (record.operation === "pdf_save") detail.operation = record.operation;
+  if (record.runtime && typeof record.runtime === "object") {
+    const runtime = record.runtime as Record<string, unknown>;
+    detail.runtime = Object.fromEntries(
+      ["python", "babeldoc", "pymupdf", "openai", "httpx", "onnxruntime"].map(
+        (name) => [
+          name,
+          typeof runtime[name] === "string" &&
+          /^[A-Za-z0-9.+-]{1,40}$/.test(runtime[name] as string)
+            ? runtime[name]
+            : "unknown",
+        ],
+      ),
+    );
+  }
+  detail.input = fields(record.input, [
+    "bytes",
+    "pages",
+    "pathLength",
+    "filenameLength",
+  ]);
+  if (record.input && typeof record.input === "object") {
+    const input = record.input as Record<string, unknown>;
+    for (const name of ["encrypted", "repaired"])
+      if (typeof input[name] === "boolean")
+        (detail.input as Record<string, unknown>)[name] = input[name];
+  }
+  detail.pdfSave = fields(record.pdfSave, [
+    "attempts",
+    "successful",
+    "failed",
+    "lastPathLength",
+    "maxPathLength",
+  ]);
+  detail.mapping = fields(record.mapping, [
+    "segments",
+    "aligned",
+    "uncertain",
+    "sourceMissing",
+    "targetMissing",
+    "unchanged",
+  ]);
+  detail.api = fields(record.api, [
+    "requests",
+    "successful",
+    "failed",
+    "retries",
+    "emptyResponses",
+    "truncatedResponses",
+    "promptTokens",
+    "completionTokens",
+    "totalTokens",
+    "requestDurationMs",
+    "activeRequests",
+    "peakActiveRequests",
+  ]);
+  if (record.api && typeof record.api === "object") {
+    const statuses = (record.api as Record<string, unknown>).httpStatuses;
+    if (statuses && typeof statuses === "object")
+      (detail.api as Record<string, unknown>).httpStatuses = Object.fromEntries(
+        Object.entries(statuses)
+          .filter(
+            ([key, count]) =>
+              /^[1-5][0-9]{2}$/.test(key) && integer(count) !== undefined,
+          )
+          .slice(0, 20),
+      );
+  }
+  if (record.stageDurationsMs && typeof record.stageDurationsMs === "object")
+    detail.stageDurationsMs = Object.fromEntries(
+      Object.entries(record.stageDurationsMs)
+        .filter(
+          ([name, duration]) =>
+            workerStageLabel(name) !== "unknown" &&
+            integer(duration) !== undefined,
+        )
+        .slice(0, 40),
+    );
+  for (const name of ["artifactsRetained", "cleanupPending"])
+    if (typeof record[name] === "boolean") detail[name] = record[name];
   return JSON.stringify(detail);
 }

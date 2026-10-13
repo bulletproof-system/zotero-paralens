@@ -22,6 +22,7 @@ from mapping_adapter import make_mapping, unavailable_mapping, MappingUnavailabl
 
 
 _atomic_write_lock = threading.Lock()
+_diagnostic_lock = threading.Lock()
 
 
 def atomic_json(path, value):
@@ -34,6 +35,23 @@ def atomic_json(path, value):
 
 def _atomic_json(path, value):
     path = Path(path)
+    if path.name == "progress.json" and isinstance(value, dict):
+        value = dict(value)
+        percent = value.get("percent")
+        if isinstance(percent, bool) or not isinstance(percent, (int, float)) or not math.isfinite(percent):
+            percent = 0
+        try:
+            previous = json.loads(path.read_text(encoding="utf-8")).get("percent", 0)
+        except (OSError, ValueError, AttributeError):
+            previous = 0
+        if isinstance(previous, bool) or not isinstance(previous, (int, float)) or not math.isfinite(previous):
+            previous = 0
+        value["percent"] = max(0, min(97, max(percent, previous)))
+        for name in ("completed", "total"):
+            if name in value and (type(value[name]) is not int or value[name] < 0):
+                value.pop(name)
+        if "completed" in value and "total" in value:
+            value["completed"] = min(value["completed"], value["total"])
     # Progress callbacks can come from two BabelDOC executor pools. A shared
     # name.tmp races (one thread renames/deletes another's pending write),
     # turning a long job into intermittent FileNotFound/Permission errors.
@@ -126,19 +144,100 @@ def configure_provider_client(translator, data):
     return True
 
 
-def translation_progress(event):
+def runtime_diagnostics():
+    result = {"python": ".".join(map(str, sys.version_info[:3]))}
+    for name in ("babeldoc", "pymupdf", "openai", "httpx", "onnxruntime"):
+        try:
+            value = version(name)
+            result[name] = value if re.fullmatch(r"[A-Za-z0-9.+-]{1,40}", value) else "unknown"
+        except Exception:
+            result[name] = "unavailable"
+    return result
+
+
+def diagnostic_stage(diagnostics, stage, backend=False):
+    now = time.monotonic()
+    with _diagnostic_lock:
+        if backend:
+            diagnostics["backendStage"] = stage
+        else:
+            diagnostics["stage"] = stage
+        if diagnostics.get("_lastStage") == stage:
+            return
+        previous = diagnostics.get("_lastStage")
+        if previous is not None:
+            timings = diagnostics.setdefault("stageDurationsMs", {})
+            timings[previous] = timings.get(previous, 0) + round((now - diagnostics["_stageStarted"]) * 1000)
+        diagnostics["_lastStage"] = stage
+        diagnostics["_stageStarted"] = now
+    if "_job" in diagnostics:
+        write_job_diagnostics(diagnostics["_job"], diagnostics)
+
+
+def write_job_diagnostics(job, diagnostics, final=False):
+    """Only known fields and numerical metadata; no config, paths or API output."""
+    now = time.monotonic()
+    with _diagnostic_lock:
+        if not final and now - diagnostics.get("_lastWritten", 0) < 2:
+            return
+        diagnostics["_lastWritten"] = now
+        detail = {"schemaVersion": 1, "stage": diagnostics.get("stage", "backend_load"),
+                  "elapsedMs": round((now - diagnostics.get("_started", now)) * 1000),
+                  "runtime": diagnostics.get("runtime", {}),
+                  "stageDurationsMs": dict(diagnostics.get("stageDurationsMs", {}))}
+        if diagnostics.get("_lastStage") is not None:
+            stage = diagnostics["_lastStage"]
+            detail["stageDurationsMs"][stage] = detail["stageDurationsMs"].get(stage, 0) + round((now - diagnostics["_stageStarted"]) * 1000)
+        for name in ("backendStage", "operation", "artifactsRetained", "cleanupPending"):
+            if name in diagnostics:
+                detail[name] = diagnostics[name]
+        # Each nested object is filtered too, even if a caller attaches extra data.
+        for name, fields in {
+            "api": ("requests", "successful", "failed", "retries", "emptyResponses", "truncatedResponses",
+                    "promptTokens", "completionTokens", "totalTokens", "requestDurationMs", "activeRequests", "peakActiveRequests"),
+            "input": ("bytes", "pages", "pathLength", "filenameLength"),
+            "pdfSave": ("attempts", "successful", "failed", "maxPathLength", "lastPathLength"),
+            "mapping": ("segments", "aligned", "uncertain", "sourceMissing", "targetMissing", "unchanged"),
+        }.items():
+            values = diagnostics.get(name)
+            if isinstance(values, dict):
+                detail[name] = {field: values[field] for field in fields
+                                if type(values.get(field)) is int and values[field] >= 0}
+                if name == "api":
+                    statuses = values.get("httpStatuses", {})
+                    if isinstance(statuses, dict):
+                        detail[name]["httpStatuses"] = {key: count for key, count in statuses.items()
+                            if isinstance(key, str) and re.fullmatch(r"[1-5][0-9]{2}", key)
+                            and type(count) is int and count >= 0}
+                if name == "input":
+                    detail[name].update({field: values[field] for field in ("encrypted", "repaired")
+                                        if type(values.get(field)) is bool})
+    try:
+        atomic_json(Path(job) / "diagnostics.json", detail)
+    except (OSError, ValueError):
+        pass  # Diagnostics cannot hide a translation or storage error.
+
+
+def translation_progress(event, translation_end=None):
     overall = event.get("overall_progress", 0)
     if not isinstance(overall, (int, float)) or not math.isfinite(overall):
         overall = 0
+    percent = max(0, min(90, overall * 0.9))
+    if translation_end is not None and 0 < translation_end < 100:
+        # Reserve 75-80 for the quality check / optional repair. Layout and
+        # PDF creation start at 80; mapping and publishing own 90-97.
+        percent = (75 * min(overall, translation_end) / translation_end
+                   if overall <= translation_end else
+                   80 + 10 * min(overall - translation_end, 100 - translation_end) / (100 - translation_end))
     return {
         "stage": str(event.get("stage", ""))[:120],
         "completed": event.get("stage_current", 0), "total": event.get("stage_total", 0),
-        "percent": max(0, min(90, overall * 0.9)),
+        "percent": percent,
     }
 
 
 @contextmanager
-def watch_cancellation(job, cancellation):
+def watch_cancellation(job, cancellation, diagnostics=None):
     """Cancellation must work during long provider calls, not just UI progress ticks."""
     stop = threading.Event()
     def watch():
@@ -146,6 +245,8 @@ def watch_cancellation(job, cancellation):
             if (job / "cancel").exists():
                 cancellation.set()
                 return
+            if diagnostics is not None:
+                write_job_diagnostics(job, diagnostics)
     thread = threading.Thread(target=watch, daemon=True)
     thread.start()
     try:
@@ -274,8 +375,53 @@ class RequestGate:
                 self.condition.notify_all()
 
 
-def guard_api_response(translator, cancellation, performance=None):
+def guard_api_response(translator, cancellation, performance=None, diagnostics=None):
     create = translator.client.chat.completions.create
+    metrics = None
+    if diagnostics is not None:
+        metrics = diagnostics.setdefault("api", {"requests": 0, "successful": 0, "failed": 0,
+            "retries": 0, "emptyResponses": 0, "truncatedResponses": 0,
+            "promptTokens": 0, "completionTokens": 0, "totalTokens": 0,
+            "requestDurationMs": 0, "activeRequests": 0, "peakActiveRequests": 0,
+            "httpStatuses": {}})
+
+    def invoke(*args, **options):
+        started = time.monotonic()
+        if metrics is not None:
+            with _diagnostic_lock:
+                metrics["requests"] += 1
+                metrics["activeRequests"] += 1
+                metrics["peakActiveRequests"] = max(metrics["peakActiveRequests"], metrics["activeRequests"])
+        try:
+            response = create(*args, **options)
+        except Exception as error:
+            if metrics is not None:
+                with _diagnostic_lock:
+                    metrics["failed"] += 1
+                    status = getattr(error, "status_code", None)
+                    if type(status) is int and 100 <= status <= 599:
+                        statuses = metrics["httpStatuses"]
+                        statuses[str(status)] = statuses.get(str(status), 0) + 1
+            raise
+        else:
+            if metrics is not None:
+                with _diagnostic_lock:
+                    metrics["successful"] += 1
+                    for attribute, field in (("prompt_tokens", "promptTokens"), ("completion_tokens", "completionTokens"), ("total_tokens", "totalTokens")):
+                        count = getattr(getattr(response, "usage", None), attribute, None)
+                        if type(count) is int and count >= 0:
+                            metrics[field] += count
+                    statuses = metrics["httpStatuses"]
+                    statuses["200"] = statuses.get("200", 0) + 1
+            return response
+        finally:
+            if metrics is not None:
+                with _diagnostic_lock:
+                    metrics["activeRequests"] -= 1
+                    metrics["requestDurationMs"] += round((time.monotonic() - started) * 1000)
+                if "_job" in diagnostics:
+                    write_job_diagnostics(diagnostics["_job"], diagnostics)
+
     gate = RequestGate(performance["concurrency"], performance["qps"], cancellation) if performance else None
     # SDK-internal retries bypass create(). Replace connection/server retries
     # below; BabelDOC retains its own 429 backoff. Every attempt uses our gate.
@@ -287,8 +433,8 @@ def guard_api_response(translator, cancellation, performance=None):
             try:
                 if gate:
                     with gate.request():
-                        return create(*args, **options)
-                return create(*args, **options)
+                        return invoke(*args, **options)
+                return invoke(*args, **options)
             except Exception as error:
                 if not gate or attempt == attempts - 1:
                     raise
@@ -298,6 +444,9 @@ def guard_api_response(translator, cancellation, performance=None):
                              or isinstance(status, int) and (status in (408, 409) or status >= 500))
                 if not retryable:
                     raise  # 401/403 never retry; 429 belongs to BabelDOC.
+                if metrics is not None:
+                    with _diagnostic_lock:
+                        metrics["retries"] += 1
                 if cancellation.wait(0.5 * (2 ** attempt)):
                     raise asyncio.CancelledError() from None
 
@@ -316,7 +465,10 @@ def guard_api_response(translator, cancellation, performance=None):
             budgets = (max(8192 if repair_attempt == 0 else 16384, requested),)
         else:
             budgets = (max(8192, requested), max(16384, requested))
-        for budget in budgets:
+        for budget_index, budget in enumerate(budgets):
+            if budget_index and metrics is not None:
+                with _diagnostic_lock:
+                    metrics["retries"] += 1
             if cancellation.is_set():
                 raise asyncio.CancelledError()
             options = dict(kwargs, max_tokens=budget)
@@ -334,6 +486,12 @@ def guard_api_response(translator, cancellation, performance=None):
             choice = choices[0] if choices else None
             content = getattr(getattr(choice, "message", None), "content", None)
             finish = getattr(choice, "finish_reason", None)
+            if metrics is not None:
+                with _diagnostic_lock:
+                    if not isinstance(content, str) or not content.strip():
+                        metrics["emptyResponses"] += 1
+                    if finish == "length":
+                        metrics["truncatedResponses"] += 1
             if isinstance(content, str) and content.strip() and finish not in ("length", "content_filter"):
                 return response
             if finish == "content_filter":
@@ -414,7 +572,7 @@ def check_untranslated(engine, docs, job, cancellation, source_paragraphs):
     """Default quality check: no extra translation API calls or IL mutation."""
     if cancellation.is_set() or (job / "cancel").exists():
         raise asyncio.CancelledError()
-    atomic_json(job / "progress.json", {"stage": "检查译文漏译（不发起补译请求）", "percent": 85})
+    atomic_json(job / "progress.json", {"stage": "检查译文漏译（不发起补译请求）", "percent": 75})
     pending = (untranslated_paragraphs(docs, source_paragraphs)
                if engine.translation_config.lang_in == "en" and engine.translation_config.lang_out == "zh" else [])
     stats = {"checked": len(source_paragraphs), "pending": len(pending),
@@ -443,7 +601,7 @@ def repair_untranslated(engine, docs, job, cancellation, source_paragraphs):
             stage += f" · 第 {completed + 1}/{len(pending)} 段 · 尝试 {attempt + 1}/{REPAIR_ATTEMPTS}"
         atomic_json(job / "progress.json", {
             "stage": stage, "completed": completed, "total": len(pending),
-            "percent": 77 + 8 * completed / max(1, len(pending)),
+            "percent": 75 + 5 * completed / max(1, len(pending)),
             "message": "补译有次数限制；未完成的段落不会阻止保留可用译文",
         })
     try:
@@ -529,7 +687,7 @@ def finalize_translation(source, pdf, before, translated_il, after, job, diagnos
             "percent": 90 + (completed / total * 6 if total else 0),
         })
 
-    diagnostics["stage"] = "mapping"
+    diagnostic_stage(diagnostics, "mapping")
     try:
         draft = make_mapping(
             source, pdf, before, translated_il, after,
@@ -549,7 +707,20 @@ def finalize_translation(source, pdf, before, translated_il, after, job, diagnos
         draft = unavailable_mapping(source, pdf)
     if (job / "cancel").exists():
         raise RuntimeError("Translation cancelled")
-    diagnostics["stage"] = "publish"
+    statuses = {}
+    reasons = {"sourceMissing": 0, "targetMissing": 0, "unchanged": 0}
+    for segment in draft.get("segments", []):
+        status = segment.get("status")
+        if status in ("aligned", "uncertain", "failed", "skipped"):
+            statuses[status] = statuses.get(status, 0) + 1
+        if status == "uncertain":
+            if not segment.get("source"): reasons["sourceMissing"] += 1
+            if not segment.get("target"): reasons["targetMissing"] += 1
+            if segment.get("source") and segment.get("target"): reasons["unchanged"] += 1
+    diagnostics["mapping"] = {"segments": len(draft.get("segments", [])),
+                              "aligned": statuses.get("aligned", 0),
+                              "uncertain": statuses.get("uncertain", 0), **reasons}
+    diagnostic_stage(diagnostics, "publish")
     published = job / "translated.pdf"
     if published.exists():
         raise RuntimeError("Translation output already exists; use a fresh job directory")
@@ -568,14 +739,61 @@ def finalize_translation(source, pdf, before, translated_il, after, job, diagnos
 
 async def run(data, source, job, diagnostics=None):
     diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics.update(_started=time.monotonic(), _job=Path(job), runtime=runtime_diagnostics())
+    try:
+        await _run(data, source, job, diagnostics)
+    finally:
+        for module, functions in diagnostics.pop("_restoreFunctions", []):
+            for name, function in functions.items():
+                setattr(module, name, function)
+        write_job_diagnostics(job, diagnostics, final=True)
+
+
+async def _run(data, source, job, diagnostics):
+    diagnostics = diagnostics if diagnostics is not None else {}
     performance = performance_options(data)
     auto_repair = data.get("autoRepair") is True
-    diagnostics["stage"] = "backend_load"
+    diagnostic_stage(diagnostics, "backend_load")
     if (job / "cancel").exists():
         raise RuntimeError("Translation cancelled")
     atomic_json(job / "progress.json", {"stage": "加载后端与模型", "percent": 0})
     from babeldoc.docvision.base_doclayout import DocLayoutModel
     from babeldoc.format.pdf.high_level import do_translate, get_translation_stage
+    import babeldoc.format.pdf.high_level as high_level
+    import pymupdf
+    with pymupdf.open(source) as input_pdf:
+        diagnostics["input"] = {"bytes": source.stat().st_size, "pages": len(input_pdf),
+                                "pathLength": len(str(source)), "filenameLength": len(source.name),
+                                "repaired": bool(input_pdf.is_repaired), "encrypted": bool(input_pdf.is_encrypted)}
+    saves = diagnostics["pdfSave"] = {"attempts": 0, "successful": 0, "failed": 0, "maxPathLength": 0}
+    diagnostics.setdefault("_restoreFunctions", []).append((high_level, {name: getattr(high_level, name) for name in ("safe_save", "fix_cmap", "add_metadata")}))
+    original_save = high_level.safe_save
+    def diagnosed_save(doc, *args, **kwargs):
+        target = args[0] if args else kwargs.get("filename", "")
+        path_length = len(str(target))
+        saves["attempts"] += 1
+        saves["lastPathLength"] = path_length
+        saves["maxPathLength"] = max(saves["maxPathLength"], path_length)
+        previous_operation = diagnostics.get("operation")
+        diagnostics["operation"] = "pdf_save"
+        try:
+            result = original_save(doc, *args, **kwargs)
+        except Exception:
+            saves["failed"] += 1
+            raise
+        else:
+            saves["successful"] += 1
+            if previous_operation is None: diagnostics.pop("operation", None)
+            else: diagnostics["operation"] = previous_operation
+            return result
+    high_level.safe_save = diagnosed_save
+    for function, label in (("fix_cmap", "修复字体字符映射"), ("add_metadata", "写入 PDF 元数据")):
+        original = getattr(high_level, function)
+        def postprocess(*args, _original=original, _label=label, **kwargs):
+            diagnostic_stage(diagnostics, _label, backend=True)
+            atomic_json(job / "progress.json", {"stage": _label, "percent": 90})
+            return _original(*args, **kwargs)
+        setattr(high_level, function, postprocess)
     from babeldoc.progress_monitor import ProgressMonitor
     from babeldoc.format.pdf.translation_config import TranslationConfig, WatermarkOutputMode
     from babeldoc.translator.translator import OpenAITranslator, set_translate_rate_limiter
@@ -641,6 +859,7 @@ async def run(data, source, job, diagnostics=None):
             cancellation.clear()
             return
         try:
+            diagnostic_stage(diagnostics, "补译未翻译的正文段落" if auto_repair else "检查译文漏译（不发起补译请求）", backend=True)
             quality_step = repair_untranslated if auto_repair else check_untranslated
             quality_step(engine, docs, job, cancellation, sources)
         except (Exception, asyncio.CancelledError) as error:
@@ -688,9 +907,9 @@ async def run(data, source, job, diagnostics=None):
         )
         configure_provider_client(translator, data)
         cancellation = threading.Event()
-        guard_api_response(translator, cancellation, performance)
+        guard_api_response(translator, cancellation, performance, diagnostics)
         provider_state = guard_translator(translator, job, cancellation)
-        diagnostics["stage"] = "model_load"
+        diagnostic_stage(diagnostics, "model_load")
         layout = DocLayoutModel.load_onnx()
         if (job / "cancel").exists():
             raise RuntimeError("Translation cancelled")
@@ -706,6 +925,12 @@ async def run(data, source, job, diagnostics=None):
         getattr(layout, "init_font_mapper", lambda _config: None)(config)
         translation_stages = get_translation_stage(config)
         known_stages = {name for name, _weight in translation_stages}
+        total_weight = sum(weight for _name, weight in translation_stages)
+        translation_weight = 0
+        for name, weight in translation_stages:
+            if name == "Typesetting": break
+            translation_weight += weight
+        translation_end = 100 * translation_weight / total_weight if total_weight else None
         # Use the pinned synchronous API, avoiding the async event/queue
         # handshake that previously stalled on Windows with BabelDOC 0.5.20.
         def on_progress(**event):
@@ -716,11 +941,11 @@ async def run(data, source, job, diagnostics=None):
             if event.get("type") in ("progress_start", "progress_update", "progress_end"):
                 stage = event.get("stage")
                 if stage in known_stages:
-                    diagnostics["backendStage"] = stage
-                atomic_json(job / "progress.json", translation_progress(event))
+                    diagnostic_stage(diagnostics, stage, backend=True)
+                atomic_json(job / "progress.json", translation_progress(event, translation_end))
 
-        diagnostics["stage"] = "translation"
-        with watch_cancellation(job, cancellation), ProgressMonitor(
+        diagnostic_stage(diagnostics, "translation")
+        with watch_cancellation(job, cancellation, diagnostics), ProgressMonitor(
             translation_stages,
             progress_change_callback=on_progress,
             finish_callback=lambda **_event: None,
@@ -755,6 +980,7 @@ async def run(data, source, job, diagnostics=None):
         # Failed/partial jobs retain their original working and output files in
         # the private job directory. Restart deletes queue history, not evidence.
         retained = not (job / "result.json").exists() or (job / "partial-warning.json").exists()
+        diagnostics["artifactsRetained"] = retained
         if retained:
             try:
                 atomic_json(job / "artifact-retention.json", {"schemaVersion": 1, "retained": True})
@@ -771,6 +997,7 @@ async def run(data, source, job, diagnostics=None):
                         remaining = True
                     else:
                         await asyncio.sleep(0.2 * (attempt + 1))
+        diagnostics["cleanupPending"] = remaining
         if remaining:
             # This file contains no exception messages, PDF text, paths or keys.
             try:
@@ -839,6 +1066,8 @@ def safe_exception_diagnostics(error):
         "EmptyFileError", "IncompleteTranslationError", "CancelledError",
         "KeyError", "IndexError", "ZeroDivisionError", "UnicodeEncodeError",
         "UnicodeDecodeError", "BrokenPipeError", "ConnectionError",
+        "FzErrorSystem", "FzErrorFormat", "FzErrorArgument", "FzErrorGeneric",
+        "FzErrorLibrary", "FzErrorLimit", "FzErrorUnsupported", "FzErrorTryLater",
     }
     chain, seen = [], set()
     current = error
@@ -848,7 +1077,7 @@ def safe_exception_diagnostics(error):
         seen.add(id(current))
         name = type(current).__name__
         entry = {"type": name if name in known else "UnknownError"}
-        for key in ("errno", "winerror"):
+        for key in ("errno", "winerror", "status_code", "code"):
             value = getattr(current, key, None)
             if type(value) is int:
                 entry[key] = value
@@ -869,15 +1098,10 @@ def safe_exception_diagnostics(error):
         entry["frames"] = frames[-8:]
         chain.append(entry)
         current = current.__cause__ or current.__context__
-    try:
-        babeldoc_version = version("babeldoc")
-    except Exception:
-        # Damaged package metadata must not hide the original job failure.
-        babeldoc_version = "unavailable"
     return {
         "exceptionType": chain[0]["type"],
         "exceptionChain": chain,
-        "runtime": {"python": ".".join(map(str, sys.version_info[:3])), "babeldoc": babeldoc_version},
+        "runtime": runtime_diagnostics(),
     }
 
 
@@ -893,6 +1117,8 @@ def main():
         status = ({"schemaVersion": 1, "stage": "cancelled", "code": "cancelled"}
                   if (job / "cancel").exists() else safe_job_error(error, diagnostics["stage"]))
         status.update(safe_exception_diagnostics(error))
+        if diagnostics.get("operation") in ("pdf_save",):
+            status["operation"] = diagnostics["operation"]
         if "backendStage" in diagnostics:
             status["backendStage"] = diagnostics["backendStage"]
         try:

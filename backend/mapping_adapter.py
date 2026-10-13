@@ -24,6 +24,11 @@ def _text(value):
     return re.sub(r"\s+", " ", value or "").strip()
 
 
+# A paragraph may contain hundreds of independently positioned font spans.
+# Keep verified geometry bounded without truncating ordinary academic prose.
+MAX_PARAGRAPH_QUADS = 4096
+
+
 class MappingUnavailableError(ValueError):
     """Only alignment snapshots are unusable; the translated PDF may still be valid."""
 
@@ -168,7 +173,7 @@ def _wrapped_cjk_refs(page, text, index, raw_cache=None):
 
 
 def _normalize_quads(page, found, index):
-    if not found or len(found) > 100:
+    if not found or len(found) > MAX_PARAGRAPH_QUADS:
         return []
     crop = page.cropbox
     # MuPDF text quads are relative to the top-left of the UNROTATED visible
@@ -239,7 +244,7 @@ def _refs(page, text, index, raw_cache=None):
             raw_cache[key] = page.get_textpage(flags=pymupdf.TEXTFLAGS_SEARCH)
         textpage = raw_cache[key]
     found = page.search_for(text, quads=True, textpage=textpage) if textpage is not None else page.search_for(text, quads=True)
-    if not found or len(found) > 100:
+    if not found or len(found) > MAX_PARAGRAPH_QUADS:
         return _wrapped_cjk_refs(page, text, index, raw_cache)
     # PyMuPDF splits a multiline hit into quads. Reject repeated independent hits.
     extracted = " ".join(_text(_textbox_text(page, q.rect, index, raw_cache, textpage)) for q in found)
