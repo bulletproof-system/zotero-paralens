@@ -1,4 +1,5 @@
 import {
+  MappingSegment,
   MappingSideName,
   MappingV1,
   NormalizedQuad,
@@ -90,6 +91,7 @@ export class NativeReaderOverlay {
   private localId?: string;
   private lockedId?: string;
   private ignoreScrollUntil = 0;
+  private pendingNavigation = false;
   private onClick?: (id: string | undefined) => void;
   private onScroll?: (point: ScrollPoint) => void;
   private onHover?: (segmentId: string | undefined) => void;
@@ -177,6 +179,7 @@ export class NativeReaderOverlay {
     this.onScroll = undefined;
     this.lockedId = undefined;
     this.activeId = undefined;
+    this.pendingNavigation = false;
     this.localId = undefined;
     for (const dispose of this.cleanup.splice(0)) {
       try {
@@ -192,17 +195,18 @@ export class NativeReaderOverlay {
   /** Remote highlight does not emit hover events back to the paired Reader. */
   showSegment(id: string | undefined): void {
     this.activeId = id;
+    this.pendingNavigation = false;
     const segment = this.mapping.segments.find((item) => item.id === id);
     if (segment?.status === "aligned") {
+      this.pendingNavigation = !this.scrollSegmentIntoView(segment);
+      const viewer = this.win?.PDFViewerApplication?.pdfViewer;
       const pages = refsForSide(segment, this.side).map(
         (ref) => ref.pageIndex + 1,
       );
-      const viewer = this.win?.PDFViewerApplication?.pdfViewer;
-      // PDF.js virtualizes distant pages. Navigate to the counterpart before
-      // drawing; pagerendered will redraw once the new page DOM is available.
-      // A multi-page segment should not move a page that is already in view.
+      // Navigate virtualized pages before retrying their geometry on redraw.
       if (
         viewer &&
+        (this.pendingNavigation || !viewer.container) &&
         typeof viewer.currentPageNumber === "number" &&
         pages.length > 0 &&
         !pages.includes(viewer.currentPageNumber)
@@ -211,29 +215,73 @@ export class NativeReaderOverlay {
         viewer.currentPageNumber = pages[0];
       }
     }
-    const ref =
-      segment?.status === "aligned"
-        ? refsForSide(segment, this.side)[0]
-        : undefined;
-    const viewer = this.win?.PDFViewerApplication?.pdfViewer;
-    const area = viewer?.container?.getBoundingClientRect();
-    const context = ref && this.getPage(ref.pageIndex);
-    if (area && context && ref.quads.length) {
-      const page = context.page.getBoundingClientRect();
-      const [x, y] = normalizedToViewport(
-        context.viewport,
-        ref.quads[0][0],
-        ref.quads[0][1],
-      );
-      const top = page.top + (y * page.height) / context.viewport.height;
-      if (top < area.top || top > area.bottom - 20)
-        this.scrollToPoint({
-          pageIndex: ref.pageIndex,
-          x: ref.quads[0][0],
-          y: ref.quads[0][1],
-        });
-    }
     this.redraw();
+  }
+
+  private scrollSegmentIntoView(segment: MappingSegment): boolean {
+    const container = this.win?.PDFViewerApplication?.pdfViewer?.container;
+    if (!container) return true;
+    const area = container.getBoundingClientRect();
+    const left = area.left + (container.clientLeft ?? 0);
+    const top = area.top + (container.clientTop ?? 0);
+    const width = container.clientWidth ?? area.width;
+    const height = container.clientHeight ?? area.height;
+    if (!width || !height) return false;
+
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity,
+      startY = Infinity;
+    for (const ref of refsForSide(segment, this.side)) {
+      const context = this.getPage(ref.pageIndex);
+      if (!context) return false;
+      const page = context.page.getBoundingClientRect();
+      for (const quad of ref.quads) {
+        let quadTop = Infinity;
+        for (let i = 0; i < quad.length; i += 2) {
+          const [x, y] = normalizedToViewport(
+            context.viewport,
+            quad[i],
+            quad[i + 1],
+          );
+          const screenX = page.left + (x * page.width) / context.viewport.width;
+          const screenY =
+            page.top + (y * page.height) / context.viewport.height;
+          minX = Math.min(minX, screenX);
+          minY = Math.min(minY, screenY);
+          maxX = Math.max(maxX, screenX);
+          maxY = Math.max(maxY, screenY);
+          quadTop = Math.min(quadTop, screenY);
+        }
+        if (startY === Infinity) startY = quadTop;
+      }
+    }
+    if (!Number.isFinite(startY)) return true;
+    if (
+      minX >= left &&
+      maxX <= left + width &&
+      minY >= top &&
+      maxY <= top + height
+    )
+      return true;
+
+    const dy =
+      maxY - minY > height
+        ? startY - top
+        : (minY + maxY) / 2 - (top + height / 2);
+    const dx =
+      minX >= left && maxX <= left + width
+        ? 0
+        : maxX - minX > width
+          ? minX - left
+          : (minX + maxX) / 2 - (left + width / 2);
+    if (dx || dy) {
+      this.ignoreScrollUntil = Date.now() + 350;
+      if (dy) container.scrollTop += dy;
+      if (dx) container.scrollLeft += dx;
+    }
+    return true;
   }
 
   private setActive(id: string | undefined): void {
@@ -241,6 +289,7 @@ export class NativeReaderOverlay {
     if (this.lockedId) return;
     this.localId = id;
     this.activeId = id;
+    this.pendingNavigation = false;
     this.redraw();
     this.onHover?.(id);
   }
@@ -378,6 +427,8 @@ export class NativeReaderOverlay {
       (item) => item.id === this.activeId,
     );
     if (!segment || segment.status !== "aligned" || !this.win) return;
+    if (this.pendingNavigation)
+      this.pendingNavigation = !this.scrollSegmentIntoView(segment);
     for (const ref of refsForSide(segment, this.side)) {
       const context = this.getPage(ref.pageIndex);
       if (!context) continue; // PDF.js virtualized this page; redraw on pagerendered.

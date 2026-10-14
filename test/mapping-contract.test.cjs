@@ -283,6 +283,301 @@ test("remote hover navigates to an offscreen counterpart and redraws after rende
   pair.detach();
 });
 
+function highlightNavigation({
+  targetRefs,
+  quads = [[0.1, 0.1, 0.3, 0.1, 0.3, 0.3, 0.1, 0.3]],
+  pageTop = 100,
+  pageLeft = 100,
+  clientHeight = 400,
+  clientWidth = 400,
+  viewport,
+} = {}) {
+  const source = fakeReader("S", 0);
+  const target = fakeReader("T", 2);
+  const mapping = sample();
+  mapping.segments[0].target = targetRefs ?? [{ pageIndex: 2, quads }];
+  const container = {
+    scrollTop: 1000,
+    scrollLeft: 1000,
+    clientTop: 0,
+    clientLeft: 0,
+    clientWidth,
+    clientHeight,
+    getBoundingClientRect: () => ({
+      left: 100,
+      top: 100,
+      width: 400,
+      height: 400,
+      right: 500,
+      bottom: 500,
+    }),
+  };
+  target.viewer.container = container;
+  target.viewer.currentPageNumber = 3;
+  target.page.getBoundingClientRect = () => ({
+    left: pageLeft - (container.scrollLeft - 1000),
+    top: pageTop - (container.scrollTop - 1000),
+    width: 1000,
+    height: 1000,
+  });
+  const originalGetPageView = target.viewer.getPageView;
+  target.viewer.getPageView = (index) => {
+    const view = originalGetPageView(index);
+    return view && (viewport ? { ...view, viewport } : view);
+  };
+  const pair = new NativeReaderPair(
+    source.reader,
+    target.reader,
+    validateMapping(mapping),
+  );
+  assert.equal(pair.attach(), true);
+  return { source, target, pair, container };
+}
+
+test("fully visible counterpart stays still even when PDF.js reports another current page", () => {
+  const { source, target, pair, container } = highlightNavigation();
+  try {
+    target.viewer.currentPageNumber = 2;
+    source.move(0.25, 0.25);
+    assert.equal(container.scrollTop, 1000);
+    assert.equal(container.scrollLeft, 1000);
+    assert.equal(target.viewer.currentPageNumber, 2);
+    assert.equal(target.page.children.length, 1);
+  } finally {
+    pair.detach();
+  }
+});
+
+test("partially or completely obscured paragraphs are vertically centered", () => {
+  for (const [pageTop, expectedScrollTop] of [
+    [-50, 850],
+    [350, 1250],
+    [600, 1500],
+  ]) {
+    const { source, target, pair, container } = highlightNavigation({
+      pageTop,
+    });
+    try {
+      source.move(0.25, 0.25);
+      assert.equal(container.scrollTop, expectedScrollTop);
+      assert.equal(container.scrollLeft, 1000);
+      source.leave();
+      source.move(0.25, 0.25);
+      assert.equal(
+        container.scrollTop,
+        expectedScrollTop,
+        "repeat hover stays still",
+      );
+      container.scrollTop += 20;
+      target.listeners.get("scroll")();
+      assert.equal(
+        container.scrollTop,
+        expectedScrollTop + 20,
+        "manual scrolling stays free",
+      );
+    } finally {
+      pair.detach();
+    }
+  }
+});
+
+test("all line quads determine visibility including a clipped last line", () => {
+  const { source, pair, container } = highlightNavigation({
+    quads: [
+      [0.1, 0.1, 0.3, 0.1, 0.3, 0.15, 0.1, 0.15],
+      [0.1, 0.35, 0.3, 0.35, 0.3, 0.45, 0.1, 0.45],
+    ],
+  });
+  try {
+    source.move(0.25, 0.25);
+    assert.equal(container.scrollTop, 1075);
+  } finally {
+    pair.detach();
+  }
+});
+
+test("paragraph taller than the viewport aligns its first line to the top", () => {
+  const { source, target, pair, container } = highlightNavigation({
+    quads: [[0.1, 0.1, 0.3, 0.1, 0.3, 0.7, 0.1, 0.7]],
+  });
+  try {
+    source.move(0.25, 0.25);
+    assert.equal(container.scrollTop, 1100);
+    assert.equal(target.page.getBoundingClientRect().top + 100, 100);
+    source.leave();
+    source.move(0.25, 0.25);
+    assert.equal(
+      container.scrollTop,
+      1100,
+      "oversized paragraph stays top aligned",
+    );
+  } finally {
+    pair.detach();
+  }
+});
+
+test("viewport-sized paragraph fits exactly", () => {
+  const { source, pair, container } = highlightNavigation({
+    quads: [[0.1, 0.1, 0.3, 0.1, 0.3, 0.5, 0.1, 0.5]],
+  });
+  try {
+    source.move(0.25, 0.25);
+    assert.equal(container.scrollTop, 1100);
+  } finally {
+    pair.detach();
+  }
+});
+
+test("scrollbar occlusion uses client dimensions for centering or top alignment", () => {
+  for (const [clientHeight, expectedScrollTop] of [
+    [400, 1095],
+    [380, 1100],
+  ]) {
+    const { source, pair, container } = highlightNavigation({
+      clientHeight,
+      quads: [[0.1, 0.1, 0.3, 0.1, 0.3, 0.49, 0.1, 0.49]],
+    });
+    try {
+      source.move(0.25, 0.25);
+      assert.equal(container.scrollTop, expectedScrollTop);
+    } finally {
+      pair.detach();
+    }
+  }
+});
+
+test("horizontal clipping centers the counterpart without losing vertical visibility", () => {
+  const { source, pair, container } = highlightNavigation({ pageLeft: 350 });
+  try {
+    source.move(0.25, 0.25);
+    assert.equal(container.scrollLeft, 1250);
+    assert.equal(container.scrollTop, 1000);
+  } finally {
+    pair.detach();
+  }
+});
+
+test("rotated and scaled page geometry determines the entire highlighted bounds", () => {
+  const { source, pair, container } = highlightNavigation({
+    viewport: {
+      viewBox: [10, 20, 110, 220],
+      width: 400,
+      height: 200,
+      convertToViewportPoint: (x, y) => [(y - 20) * 2, (x - 10) * 2],
+      convertToPdfPoint: (x, y) => [y / 2 + 10, x / 2 + 20],
+    },
+  });
+  try {
+    source.move(0.25, 0.25);
+    assert.equal(container.scrollTop, 1000);
+    assert.equal(container.scrollLeft, 1600);
+  } finally {
+    pair.detach();
+  }
+});
+
+test("virtualized counterpart finishes centering after its page becomes available", () => {
+  const { source, target, pair, container } = highlightNavigation({
+    pageTop: 600,
+  });
+  try {
+    target.page.isConnected = false;
+    target.viewer.currentPageNumber = 1;
+    source.move(0.25, 0.25);
+    assert.equal(target.viewer.currentPageNumber, 3);
+    assert.equal(container.scrollTop, 1000);
+    target.page.isConnected = true;
+    target.redraw();
+    assert.equal(container.scrollTop, 1500);
+    target.redraw();
+    assert.equal(container.scrollTop, 1500);
+  } finally {
+    pair.detach();
+  }
+});
+
+test("clearing a highlight cancels deferred navigation", () => {
+  const { source, target, pair, container } = highlightNavigation({
+    pageTop: 600,
+  });
+  try {
+    target.page.isConnected = false;
+    source.move(0.25, 0.25);
+    source.leave();
+    target.page.isConnected = true;
+    target.redraw();
+    assert.equal(container.scrollTop, 1000);
+    assert.equal(target.page.children.length, 0);
+  } finally {
+    pair.detach();
+  }
+});
+
+test("cross-page paragraph uses its full height and starts at its first page", () => {
+  const { source, target, pair, container } = highlightNavigation({
+    targetRefs: [
+      { pageIndex: 1, quads: [[0.1, 0.7, 0.3, 0.7, 0.3, 0.9, 0.1, 0.9]] },
+      { pageIndex: 2, quads: [[0.1, 0.1, 0.3, 0.1, 0.3, 0.2, 0.1, 0.2]] },
+    ],
+  });
+  try {
+    const firstView = target.viewer.getPageView(2);
+    target.viewer.getPageView = (index) =>
+      index === 2
+        ? {
+            viewport: firstView.viewport,
+            div: {
+              isConnected: true,
+              getBoundingClientRect: () => ({
+                left: 100,
+                top: 1120 - (container.scrollTop - 1000),
+                width: 1000,
+                height: 1000,
+              }),
+              appendChild() {},
+            },
+          }
+        : index === 1
+          ? firstView
+          : undefined;
+    source.move(0.25, 0.25);
+    assert.equal(container.scrollTop, 1700);
+  } finally {
+    pair.detach();
+  }
+});
+
+test("oversized paragraph spanning columns aligns its actual first line", () => {
+  const { source, pair, container } = highlightNavigation({
+    quads: [
+      [0.1, 0.7, 0.3, 0.7, 0.3, 0.9, 0.1, 0.9],
+      [0.5, 0.1, 0.7, 0.1, 0.7, 0.3, 0.5, 0.3],
+    ],
+  });
+  try {
+    source.move(0.25, 0.25);
+    assert.equal(container.scrollTop, 1700);
+  } finally {
+    pair.detach();
+  }
+});
+
+test("centering a hover suppresses scroll synchronization echoes", () => {
+  const originalGet = Zotero.Prefs.get;
+  Zotero.Prefs.get = () => true;
+  const { source, target, pair } = highlightNavigation({ pageTop: 600 });
+  try {
+    const calls = [];
+    source.viewer.scrollPageIntoView = (options) => calls.push(options);
+    source.move(0.25, 0.25);
+    target.listeners.get("scroll")();
+    assert.equal(calls.length, 0);
+  } finally {
+    pair.detach();
+    Zotero.Prefs.get = originalGet;
+  }
+});
+
 test("real BabelDOC two-paragraph fixture maps distinct hover targets in both Readers", () => {
   const fixture = JSON.parse(
     require("node:fs").readFileSync(
