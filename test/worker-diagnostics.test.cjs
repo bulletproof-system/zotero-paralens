@@ -20,10 +20,26 @@ buildSync({
   format: "cjs",
 });
 const {
+  describeJobFailure,
   describeWorkerDiagnostics,
   describeJobDiagnostics,
   workerStageLabel,
 } = require(diagnosticFile);
+
+test("cold model downloads have distinct progress and actionable errors without provider details", () => {
+  assert.equal(
+    workerStageLabel("加载布局模型（首次使用可能下载资源）"),
+    "加载布局模型（首次使用可能下载资源）",
+  );
+  const message = describeJobFailure({
+    schemaVersion: 1,
+    stage: "model_load",
+    code: "model_download_failed",
+    message: "PRIVATE_KEY",
+  });
+  assert(message.includes("资源下载失败"));
+  assert(!message.includes("PRIVATE"));
+});
 
 test("quality and repair progress do not go backwards or display premature success", () => {
   let previous;

@@ -910,6 +910,7 @@ async def _run(data, source, job, diagnostics):
         guard_api_response(translator, cancellation, performance, diagnostics)
         provider_state = guard_translator(translator, job, cancellation)
         diagnostic_stage(diagnostics, "model_load")
+        atomic_json(job / "progress.json", {"stage": "加载布局模型（首次使用可能下载资源）", "percent": 0})
         layout = DocLayoutModel.load_onnx()
         if (job / "cancel").exists():
             raise RuntimeError("Translation cancelled")
@@ -1050,6 +1051,8 @@ def safe_job_error(error, stage):
             current = current.__cause__ or current.__context__
             continue
         break
+    if stage == "model_load" and code in {"api_connection", "api_timeout", "api_request", "api_server"}:
+        code = "model_download_failed"
     return {"schemaVersion": 1, "stage": stage, "code": code}
 
 

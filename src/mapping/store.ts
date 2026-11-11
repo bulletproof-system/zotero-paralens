@@ -27,6 +27,7 @@ function mappingPath(
 async function candidates(
   libraryID: number,
   source: Zotero.Item,
+  tag = sourceTag(source.key),
 ): Promise<Zotero.Item[]> {
   const parent = source.parentItemID
     ? await Zotero.Items.getAsync(source.parentItemID)
@@ -35,11 +36,48 @@ async function candidates(
     ? await Zotero.Items.getAsync(parent.getAttachments())
     : await Zotero.Items.getAll(libraryID, true, false);
   return items.filter(
-    (item) =>
-      item.isAttachment() &&
-      !item.deleted &&
-      item.hasTag(sourceTag(source.key)),
+    (item) => item.isAttachment() && !item.deleted && item.hasTag(tag),
   );
+}
+
+export async function loadMappingForAttachment(
+  attachment: Zotero.Item,
+): Promise<MappingV1 | undefined> {
+  const direct = await loadMapping(attachment.libraryID, attachment.key);
+  if (direct) return direct;
+  const reverse = await candidates(
+    attachment.libraryID,
+    attachment,
+    targetTag(attachment.key),
+  );
+  let missing = false;
+  for (const candidate of reverse) {
+    const stored = await candidate.getFilePathAsync();
+    if (!stored || !(await IOUtils.exists(stored))) {
+      missing = true;
+      continue;
+    }
+    try {
+      const mapping = validateMapping(await IOUtils.readJSON(stored));
+      if (
+        mapping.target.attachmentKey !== attachment.key ||
+        !candidate.hasTag(sourceTag(mapping.source.attachmentKey))
+      )
+        continue;
+      return await loadMapping(
+        attachment.libraryID,
+        mapping.source.attachmentKey,
+        attachment.key,
+      );
+    } catch {
+      continue;
+    }
+  }
+  if (missing)
+    throw new Error("段落映射附件尚未下载；请先同步或下载该 JSON 附件");
+  if (reverse.length)
+    throw new Error("段落映射附件损坏或不匹配，请恢复有效的映射附件");
+  return undefined;
 }
 
 /** The JSON is an imported stored attachment beside the translated PDF, not a linked local file.

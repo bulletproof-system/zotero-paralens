@@ -73,10 +73,36 @@ test("missing uv cannot enable work even when overridden with arbitrary executab
   const status = await detectUV(
     env,
     "/tmp/evil.sh",
-    async () => true,
+    async (candidate) => candidate === "/tmp/evil.sh",
     async () => true,
   );
   assert.equal(status.available, false);
+});
+
+test("GUI launches discover Homebrew uv without shell PATH and ignore relative executables", async () => {
+  const env = { path: ".:bin:/usr/bin", isWindows: false };
+  assert(uvCandidatePaths(env).every((candidate) => candidate.startsWith("/")));
+  const status = await detectUV(
+    env,
+    "./uv",
+    async (candidate) => candidate === "/opt/homebrew/bin/uv",
+    async () => true,
+  );
+  assert.equal(status.path, "/opt/homebrew/bin/uv");
+  assert(!uvCandidatePaths({ path: ".;bin;C:tools", isWindows: true }).length);
+});
+
+test("custom Chat Completions endpoints normalize once without changing origin", () => {
+  for (const endpoint of ["chat/completions", "responses"]) {
+    assert.equal(
+      resolveProviderConfig(
+        "custom",
+        "model",
+        `https://example.invalid/custom/v1/${endpoint}/`,
+      ).baseURL,
+      "https://example.invalid/custom/v1",
+    );
+  }
 });
 
 test("work command uses uv project venv, never shell or credentials in argv", () => {

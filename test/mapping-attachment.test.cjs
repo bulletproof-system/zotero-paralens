@@ -12,7 +12,7 @@ buildSync({
   platform: "node",
   format: "cjs",
 });
-const { saveMapping, loadMapping } = require(out);
+const { saveMapping, loadMapping, loadMappingForAttachment } = require(out);
 const clean = (value) => JSON.parse(JSON.stringify(value));
 const fixture = require("../fixtures/two-paragraphs.mapping.v1.json");
 
@@ -137,10 +137,22 @@ test("mapping is stored beside translation and discovered on another device with
       false,
     );
     assert.deepEqual(clean(await loadMapping(7, "SOURCE01")), mapping);
+    assert.deepEqual(
+      clean(await loadMappingForAttachment({ ...synced[1], libraryID: 7 })),
+      mapping,
+    );
     await fs.rm(copy);
     await assert.rejects(loadMapping(7, "SOURCE01"), /尚未下载/);
+    await assert.rejects(
+      loadMappingForAttachment({ ...synced[1], libraryID: 7 }),
+      /尚未下载/,
+    );
     await fs.writeFile(copy, "broken JSON");
     await assert.rejects(loadMapping(7, "SOURCE01"), /附件损坏/);
+    await assert.rejects(
+      loadMappingForAttachment({ ...synced[1], libraryID: 7 }),
+      /损坏/,
+    );
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

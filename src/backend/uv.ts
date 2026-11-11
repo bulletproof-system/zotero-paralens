@@ -29,13 +29,23 @@ export function uvCandidatePaths(env: UVEnvironment, override = ""): string[] {
     directories.push(
       `${env.localAppData}${slash}Microsoft${slash}WinGet${slash}Links`,
     );
+  if (!env.isWindows)
+    directories.push("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin");
   const candidates = [
     override.trim(),
     ...directories
       .filter(Boolean)
       .map((dir) => `${dir.replace(/[\\/]+$/, "")}${slash}${exe}`),
   ];
-  return [...new Set(candidates.filter(Boolean))];
+  return [
+    ...new Set(
+      candidates.filter((candidate) =>
+        env.isWindows
+          ? /^(?:[A-Za-z]:[\\/]|\\\\[^\\]+\\[^\\]+\\)/.test(candidate)
+          : candidate.startsWith("/"),
+      ),
+    ),
+  ];
 }
 
 /** Call with absolute paths and argument arrays only, never through a shell. */

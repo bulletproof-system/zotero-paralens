@@ -11,6 +11,10 @@ import {
   detachBilingual,
   initializeTranslationQueue,
 } from "./reader/translationWorkflow";
+import {
+  registerBilingualSidebar,
+  unregisterBilingualSidebar,
+} from "./reader/bilingualSidebar";
 
 async function onStartup(): Promise<void> {
   log("插件启动");
@@ -62,6 +66,11 @@ async function onStartup(): Promise<void> {
   } catch {
     log("[ParaLens] 任务队列读取失败，请检查配置目录");
   }
+  try {
+    registerBilingualSidebar();
+  } catch {
+    log("[ParaLens] 双语侧边栏注册失败；仍可通过附件右键菜单打开对照");
+  }
   // Missing uv must not prevent opening the preferences page or finish startup.
   addon.data.initialized = true;
 }
@@ -79,6 +88,7 @@ async function onShutdown(): Promise<void> {
   await flushLogs();
   addon.data.alive = false;
   unregisterAllTranslationMenus();
+  unregisterBilingualSidebar();
   detachBilingual();
   ztoolkit.unregisterAll();
   // @ts-expect-error - Plugin instance is not typed

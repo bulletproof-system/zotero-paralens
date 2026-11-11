@@ -9,3 +9,7 @@ item-section-example2-sidenav-tooltip =
 item-section-example2-button-tooltip =
     .tooltiptext = 移除此面板
 item-info-row-example-label = 示例行
+bilingual-header =
+    .label = ParaLens · 双语对照
+bilingual-sidenav =
+    .tooltiptext = ParaLens 双语对照控制

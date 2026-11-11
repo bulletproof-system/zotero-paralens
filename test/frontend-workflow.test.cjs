@@ -55,7 +55,7 @@ async function loadWorkflow() {
                   : name === "queueUI"
                     ? `export async function showTaskQueue(win, queue, cancel, open) { globalThis.__openTask = open; }
                        export function closeTaskQueueWindows() {}`
-                    : `export class NativeReaderPair { attach() { return true; } detach() {} }`,
+                    : `export class NativeReaderPair { attach() { return true; } detach() {} subscribe() { return () => {}; } }`,
               loader: "js",
             }),
           );
@@ -267,6 +267,29 @@ test("one selected PDF -> import translation -> bind/persist mapping -> open nat
     );
     assert.equal(globalThis.__requests.length, 0);
     global.addon.data.backendInstalling = false;
+    const originalExec = Zotero.Utilities.Internal.exec;
+    Zotero.Utilities.Internal.exec = async (_path, args) =>
+      !args.join(" ").includes("import pymupdf");
+    await assert.rejects(
+      translateSelection(
+        {
+          confirm: () =>
+            assert.fail("Broken imports must block billing confirmation"),
+        },
+        [source],
+      ),
+      /原生依赖加载失败/,
+    );
+    assert.equal(globalThis.__requests.length, 0);
+    Zotero.Utilities.Internal.exec = originalExec;
+    const uvPath = path.join(profile, "uv.exe");
+    await fs.writeFile(uvPath, "test stub");
+    global.Services.env = { get: (name) => (name === "PATH" ? profile : "") };
+    global.addon.data.uv = { available: false };
+    await translateSelection({ confirm: () => false }, [source]);
+    assert.equal(global.addon.data.uv.available, true);
+    assert.equal(global.addon.data.uv.path, uvPath);
+    assert.equal(globalThis.__requests.length, 0);
     await translateSelection({ confirm: () => true } /* window */, [source]);
     assert.ok(percentages.includes(36));
     assert.ok(

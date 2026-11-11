@@ -91,7 +91,7 @@ export function resolveProviderConfig(
   // the user entered in preferences for display/editing.
   const baseURL =
     preset.id === "custom"
-      ? validated.replace(/\/v1\/responses$/i, "/v1")
+      ? validated.replace(/\/(?:chat\/completions|responses)$/i, "")
       : validated;
   return { provider: preset.id, model: selectedModel, baseURL };
 }

@@ -7,6 +7,7 @@ import {
 } from "../mapping/types";
 import { getPref, setPref } from "../utils/prefs";
 import { counterpartScrollPoint, ScrollPoint } from "./scrollSync";
+import { tileReaderWindows } from "./windowLayout";
 import { findHit, validateMapping } from "../mapping/validation";
 import {
   isPdfViewport,
@@ -17,6 +18,7 @@ import {
 
 /** Version-specific Zotero/PDF.js internals must not escape this adapter. */
 export interface NativeReaderLike {
+  _window?: Window;
   _iframeWindow?: Window;
   _internalReader?: { _primaryView?: { _iframeWindow?: Window } };
   type?: string;
@@ -95,6 +97,7 @@ export class NativeReaderOverlay {
   private onClick?: (id: string | undefined) => void;
   private onScroll?: (point: ScrollPoint) => void;
   private onHover?: (segmentId: string | undefined) => void;
+  private onDetach?: () => void;
 
   constructor(
     private readonly reader: NativeReaderLike,
@@ -106,6 +109,7 @@ export class NativeReaderOverlay {
     onHover?: (segmentId: string | undefined) => void,
     onClick?: (id: string | undefined) => void,
     onScroll?: (point: ScrollPoint) => void,
+    onDetach?: () => void,
   ): boolean {
     if (this.win) return true;
     const win = resolvePdfWindow(this.reader);
@@ -114,6 +118,7 @@ export class NativeReaderOverlay {
     this.onHover = onHover;
     this.onClick = onClick;
     this.onScroll = onScroll;
+    this.onDetach = onDetach;
     const move = (event: Event) => this.handlePointer(event as PointerEvent);
     const leave = (event: Event) => {
       if (event.target === win.document.documentElement)
@@ -174,6 +179,8 @@ export class NativeReaderOverlay {
   }
 
   detach(): void {
+    const onDetach = this.onDetach;
+    this.onDetach = undefined;
     this.onHover = undefined;
     this.onClick = undefined;
     this.onScroll = undefined;
@@ -190,6 +197,7 @@ export class NativeReaderOverlay {
     }
     this.removeDrawn();
     this.win = undefined;
+    onDetach?.();
   }
 
   /** Remote highlight does not emit hover events back to the paired Reader. */
@@ -481,10 +489,12 @@ export class NativeReaderPair {
   private sync = false;
   private updates: Array<() => void> = [];
   private readonly mapping: MappingV1;
+  private attached = false;
+  private readonly listeners = new Set<() => void>();
 
   constructor(
-    sourceReader: NativeReaderLike,
-    targetReader: NativeReaderLike,
+    private readonly sourceReader: NativeReaderLike,
+    private readonly targetReader: NativeReaderLike,
     mapping: MappingV1,
   ) {
     this.mapping = mapping;
@@ -497,12 +507,13 @@ export class NativeReaderPair {
   }
 
   attach(): boolean {
+    if (this.attached) return true;
     if (!this.attachmentKeysMatch) return false;
     const click = (id: string | undefined) => {
       this.lockedId = id === this.lockedId ? undefined : id;
       this.source.setLocked(this.lockedId);
       this.target.setLocked(this.lockedId);
-      this.updates.forEach((update) => update());
+      this.notify();
     };
     const source = this.source.attach(
       (id) => {
@@ -515,6 +526,7 @@ export class NativeReaderPair {
             counterpartScrollPoint(this.mapping, "source", point),
           );
       },
+      () => this.detach(),
     );
     const target = this.target.attach(
       (id) => {
@@ -527,13 +539,11 @@ export class NativeReaderPair {
             counterpartScrollPoint(this.mapping, "target", point),
           );
       },
+      () => this.detach(),
     );
     if (source && target) {
-      const toggle = (enabled: boolean) => {
-        this.sync = enabled;
-        setPref("syncScroll", enabled);
-        this.updates.forEach((update) => update());
-      };
+      this.attached = true;
+      const toggle = (enabled: boolean) => this.setSyncScroll(enabled);
       this.updates = [
         this.source.addControls(
           () => this.sync,
@@ -546,7 +556,7 @@ export class NativeReaderPair {
           () => click(undefined),
         ),
       ];
-      this.updates.forEach((update) => update());
+      this.notify();
       return true;
     }
     this.detach();
@@ -554,9 +564,56 @@ export class NativeReaderPair {
   }
 
   detach(): void {
+    const wasAttached = this.attached;
+    this.attached = false;
     this.updates = [];
     this.lockedId = undefined;
     this.source.detach();
     this.target.detach();
+    if (wasAttached) this.notify();
+  }
+
+  get state(): { attached: boolean; syncScroll: boolean; locked: boolean } {
+    return {
+      attached: this.attached,
+      syncScroll: this.sync,
+      locked: Boolean(this.lockedId),
+    };
+  }
+
+  matches(attachmentKey: string): boolean {
+    return [
+      this.mapping.source.attachmentKey,
+      this.mapping.target.attachmentKey,
+    ].includes(attachmentKey);
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  setSyncScroll(enabled: boolean): void {
+    this.sync = enabled;
+    setPref("syncScroll", enabled);
+    this.notify();
+  }
+
+  unlock(): void {
+    this.lockedId = undefined;
+    this.source.setLocked(undefined);
+    this.target.setLocked(undefined);
+    this.notify();
+  }
+
+  tile(): boolean {
+    return (
+      this.attached && tileReaderWindows(this.sourceReader, this.targetReader)
+    );
+  }
+
+  private notify(): void {
+    this.updates.forEach((update) => update());
+    this.listeners.forEach((listener) => listener());
   }
 }

@@ -3,6 +3,8 @@
 /* eslint-disable */
 // @ts-nocheck
 export type FluentMessageId =
+  | 'bilingual-header'
+  | 'bilingual-sidenav'
   | 'item-info-row-example-label'
   | 'item-section-example1-head-text'
   | 'item-section-example1-sidenav-tooltip'

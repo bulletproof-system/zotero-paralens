@@ -339,6 +339,12 @@ class AdapterTests(unittest.TestCase):
 
 
 class WorkerErrorClassificationTests(unittest.TestCase):
+    def test_model_download_timeout_is_not_a_translation_api_timeout(self):
+        error = TimeoutError("PRIVATE_NETWORK_DETAILS")
+        self.assertEqual(worker.safe_job_error(error, "model_load")["code"], "model_download_failed")
+        self.assertEqual(worker.safe_job_error(error, "translation")["code"], "api_timeout")
+        self.assertNotIn("PRIVATE", json.dumps(worker.safe_job_error(error, "model_load")))
+
     def test_scanned_pdf_and_text_layer_errors_are_not_provider_errors(self):
         for name, code in (("ScannedPDFError", "pdf_scanned"),
                            ("ExtractTextError", "pdf_text_extraction"),

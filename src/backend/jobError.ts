@@ -28,6 +28,8 @@ const errors: Record<string, string> = {
   pdf_already_translated: "输入文件已由 BabelDOC 生成，请选择原始 PDF 进行翻译",
   backend_load_failed: "后端加载失败，请在设置中检查或重新安装后端",
   model_load_failed: "布局模型加载失败，请检查模型缓存和网络",
+  model_download_failed:
+    "布局模型资源下载失败；首次使用需要联网，请检查代理、防火墙和模型缓存，这不是翻译 API 请求失败",
   translation_failed: "翻译或排版失败，请检查 PDF、模型和 API 配置",
   mapping_failed: "段落映射生成失败，请检查 PDF 的文本层和复杂版式",
   publish_failed: "翻译结果保存失败，请检查磁盘空间、权限和文件占用",
@@ -107,6 +109,7 @@ export function diagnosticLabel(value: unknown): string {
 const workerStages = new Set([
   ...Object.keys(stages),
   "加载后端与模型",
+  "加载布局模型（首次使用可能下载资源）",
   "翻译段落",
   "生成段落映射",
   "保存翻译结果",

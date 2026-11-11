@@ -38,9 +38,11 @@ ParaLens 使用两个 Zotero 原生 Reader 并排展示原文和译文，复用�
 
 ## 生命周期与兼容性
 
+阅读器右侧通过 `Zotero.ItemPaneManager` 注册 ParaLens 双语控制面板，提供打开／停止对照、同步滚动、解锁、重新并排和任务队列入口。面板与浮动控件共用当前阅读器配对状态；停止对照只释放高亮和监听器，不关闭或删除 PDF。原文和译文均可通过已同步的映射附件打开对照。
+
 适配器检查 Reader iframe、`PDFViewerApplication.pdfViewer.getPageView` 和 viewport 等能力。PDF.js 内部对象不是稳定的公开 Zotero 契约；能力缺失时明确报告兼容性问题，不产生猜测高亮。
 
-关闭窗口或插件关闭时执行 `detach()`，清除 overlay、监听器及同步状态。兼容范围见[兼容性说明](compatibility.md)，不以 TypeScript 类型存在代替实机测试。
+关闭任一配对窗口时释放两侧 overlay、监听器及同步状态，并更新侧边栏；插件关闭时注销面板及订阅。兼容范围见[兼容性说明](compatibility.md)，不以 TypeScript 类型存在代替实机测试。
 
 ## 附件与任务
 

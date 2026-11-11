@@ -8,9 +8,14 @@ import {
   TranslationCancelledError,
 } from "../backend/babeldoc";
 import { resolveBackend } from "../backend/selection";
-import { isBackendInstalled } from "../backend/installationStatus";
+import { inspectBackendInstallation } from "../backend/installationStatus";
+import { inspectUV } from "../backend/uvRuntime";
 import { bindAttachmentKeys } from "../mapping/validation";
-import { loadMapping, saveMapping } from "../mapping/store";
+import {
+  loadMapping,
+  loadMappingForAttachment,
+  saveMapping,
+} from "../mapping/store";
 import { MappingV1 } from "../mapping/types";
 import { getPref } from "../utils/prefs";
 import { NativeReaderPair, NativeReaderLike } from "./nativeOverlay";
@@ -25,6 +30,24 @@ import { resolveProviderConfig } from "../backend/providers";
 import { tileReaderWindows } from "./windowLayout";
 
 const activePairs = new Map<string, NativeReaderPair>();
+const bilingualListeners = new Set<() => void>();
+
+export function subscribeBilingual(listener: () => void): () => void {
+  bilingualListeners.add(listener);
+  return () => bilingualListeners.delete(listener);
+}
+
+export function bilingualPair(item: Zotero.Item): NativeReaderPair | undefined {
+  for (const [key, pair] of activePairs) {
+    if (key.startsWith(`${item.libraryID}:`) && pair.matches(item.key))
+      return pair;
+  }
+  return undefined;
+}
+
+function notifyBilingual(): void {
+  bilingualListeners.forEach((listener) => listener());
+}
 let activeBackend: BabelDocBackend | undefined;
 let workerRunning = false;
 let cancelRequested = false;
@@ -84,19 +107,35 @@ async function assertReady(): Promise<void> {
   const selected = getPref("backend") || "babeldoc";
   if (resolveBackend(selected).id !== selected || selected !== "babeldoc")
     throw new Error("不支持的翻译后端");
-  if (!addon.data.backendProjectDir || !addon.data.uv?.available)
-    throw new Error("请先在 ParaLens 设置中安装后端并检测 uv");
-  if (
-    !(await isBackendInstalled(
-      addon.data.backendProjectDir,
-      Services.appinfo.OS === "WINNT",
-      (path) => IOUtils.exists(path),
-      async (path, args) => (await executeHidden(path, args)) === true,
-    ))
-  )
+  if (!addon.data.backendProjectDir)
+    throw new Error("当前机器尚未部署后端；请在 ParaLens 设置中安装后端");
+  if (!addon.data.uv?.available) addon.data.uv = await inspectUV();
+  if (!addon.data.uv.available) throw new Error(addon.data.uv.message);
+  const installation = await inspectBackendInstallation(
+    addon.data.backendProjectDir,
+    Services.appinfo.OS === "WINNT",
+    (path) => IOUtils.exists(path),
+    async (path, args) => (await executeHidden(path, args)) === true,
+  );
+  log(
+    "[ParaLens] 翻译启动检查；系统=" +
+      Services.appinfo.OS +
+      "；后端=" +
+      installation,
+  );
+  if (installation !== "ready") {
+    const reasons = {
+      missing: "当前机器尚未安装 BabelDOC；Python 环境不会随 Zotero 附件同步",
+      incompatible:
+        "BabelDOC 版本不匹配或 Python 环境无法运行；不要从另一台机器复制 .venv",
+      broken:
+        "BabelDOC 已安装，但模块或原生依赖加载失败；请检查系统运行库及安全软件拦截",
+    };
     throw new Error(
-      "BabelDOC 尚未安装、版本不匹配或模块加载失败；请到 ParaLens 设置安装或重新安装后端",
+      reasons[installation] +
+        "；请到 ParaLens 设置安装或重新安装后端，并查看日志",
     );
+  }
   if (addon.data.backendInstalling)
     throw new Error("后端正在安装，请等待完成后再启动翻译");
 }
@@ -550,6 +589,14 @@ export async function openBilingual(
       if (pair.attach()) {
         tileReaderWindows(sourceReader, targetReader);
         activePairs.set(pairKey, pair);
+        const unsubscribe = pair.subscribe(() => {
+          if (!pair.state.attached) {
+            if (activePairs.get(pairKey) === pair) activePairs.delete(pairKey);
+            unsubscribe();
+          }
+          notifyBilingual();
+        });
+        notifyBilingual();
         return true;
       }
     }
@@ -562,7 +609,7 @@ export async function openBilingual(
 
 export async function openSavedBilingual(items: Zotero.Item[]): Promise<void> {
   const source = await selectedSourceAttachment(items);
-  const mapping = await loadMapping(source.libraryID, source.key);
+  const mapping = await loadMappingForAttachment(source);
   if (!mapping) throw new Error("此 PDF 尚无 ParaLens 译文");
   if (!mapping.segments.some((segment) => segment.status === "aligned"))
     throw new Error("译文未能定位可悬停的段落；请直接打开译文附件");

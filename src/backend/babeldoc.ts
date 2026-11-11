@@ -103,7 +103,10 @@ export class BabelDocBackend implements TranslationBackend {
     );
     const apiKey = await readAPIKey(selected.provider);
     if (this.cancelRequested) throw new TranslationCancelledError();
-    if (!apiKey) throw new Error("请先在 ParaLens 设置中保存翻译 API Key");
+    if (!apiKey)
+      throw new Error(
+        "请在当前机器的 ParaLens 设置中保存翻译 API Key；密钥不会随 Zotero 附件同步",
+      );
     const configFile = await IOUtils.createUniqueFile(job, "config-", 0o600);
     this.job = job;
     const started = Date.now();

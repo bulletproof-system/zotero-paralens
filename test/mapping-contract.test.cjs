@@ -697,6 +697,43 @@ test("click locks both highlights across pointer leave; Escape unlocks and clean
   assert.equal(target.listeners.size, 0);
 });
 
+test("pair controls publish changes and closing either Reader detaches both sides", () => {
+  const source = fakeReader("S", 0),
+    target = fakeReader("T", 2);
+  const pair = new NativeReaderPair(
+    source.reader,
+    target.reader,
+    validateMapping(sample()),
+  );
+  const changes = [];
+  const unsubscribe = pair.subscribe(() => changes.push(pair.state));
+  assert.equal(pair.attach(), true);
+  assert.equal(pair.attach(), true);
+  assert.equal(changes.length, 1);
+  assert(pair.matches("S") && pair.matches("T") && !pair.matches("other"));
+  pair.setSyncScroll(true);
+  assert.equal(changes.at(-1).syncScroll, true);
+  source.listeners.get("click")({
+    target: {
+      closest: (selector) =>
+        selector.startsWith(".page") ? source.page : null,
+    },
+    clientX: 35,
+    clientY: 45,
+  });
+  assert.equal(pair.state.locked, true);
+  pair.unlock();
+  assert.equal(pair.state.locked, false);
+  target.listeners.get("pagehide")();
+  assert.equal(changes.at(-1).attached, false);
+  assert.equal(source.listeners.size, 0);
+  assert.equal(target.listeners.size, 0);
+  const count = changes.length;
+  unsubscribe();
+  pair.setSyncScroll(false);
+  assert.equal(changes.length, count);
+});
+
 test("scroll is off by default; enabled sync is bidirectional and programmatic events never echo", () => {
   const originalGet = Zotero.Prefs.get,
     originalNow = Date.now;
